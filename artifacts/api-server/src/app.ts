@@ -42,8 +42,7 @@ if (savedKeys.length > 0) {
 
 app.use("/api", router);
 
-// --- Расширенная логика поиска фронтенда ---
-// __dirname указывает на папку, где лежит скомпилированный app.js (обычно api-server/dist)
+// --- Поиск фронтенда и SPA fallback ---
 const possiblePaths = [
   path.resolve(__dirname, "../../woxsom-code/dist"),
   path.resolve(__dirname, "../woxsom-code/dist"),
@@ -55,19 +54,25 @@ const foundPath = possiblePaths.find(p => fs.existsSync(p));
 
 if (foundPath) {
   app.use(express.static(foundPath));
-  app.get("*", (req: Request, res: Response, next: NextFunction) => {
+
+  // Использование "/*" вместо "*" для совместимости с Express 5
+  app.get("/*", (req: Request, res: Response, next: NextFunction) => {
+    // Если запрос начинается с /api, игнорируем его и идем дальше
     if (req.path.startsWith("/api")) return next();
-    res.sendFile(path.join(foundPath, "index.html"));
+    
+    // Отправляем index.html для любого другого маршрута (SPA)
+    res.sendFile(path.join(foundPath, "index.html"), (err) => {
+      if (err) next(err);
+    });
   });
 } else {
-  // Если не нашли, выводим отладочную информацию
+  // Отладочный вывод, если папка не найдена
   app.get("/", (_req, res) => {
     res.json({ 
       status: "Frontend not found",
       message: "API is working, but couldn't locate build folder",
       searched: possiblePaths,
-      cwd: process.cwd(),
-      dirname: __dirname
+      cwd: process.cwd()
     });
   });
 }
