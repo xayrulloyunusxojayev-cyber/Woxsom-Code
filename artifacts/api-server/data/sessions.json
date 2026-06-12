@@ -1,0 +1,18 @@
+[
+  {
+    "id": "52461fd0-baa5-47f8-86d3-048b4fa695c4",
+    "title": "New Project",
+    "status": "idle",
+    "hasProject": false,
+    "createdAt": "2026-06-12T13:56:38.365Z",
+    "updatedAt": "2026-06-12T13:56:38.365Z"
+  },
+  {
+    "id": "02f0816b-0022-45b1-bb35-eb5d1946b53c",
+    "title": "Sdelay AI kotoriy mojet sdelat cheloveka luchshe i",
+    "status": "error",
+    "hasProject": false,
+    "createdAt": "2026-06-12T13:56:48.997Z",
+    "updatedAt": "2026-06-12T13:59:32.078Z"
+  }
+]
