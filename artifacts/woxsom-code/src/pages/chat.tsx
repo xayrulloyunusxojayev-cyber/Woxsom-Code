@@ -46,14 +46,18 @@ export default function ChatPage() {
   }, [sessionId, sessions, sessionsLoading, setLocation, createSession, queryClient]);
 
   const { data: session } = useGetSession(sessionId || "", { 
-    query: { enabled: !!sessionId } 
+    query: { 
+      enabled: !!sessionId,
+      queryKey: getGetSessionQueryKey(sessionId || ""),
+    } 
   });
 
   const { data: pipelineStatus } = useGetPipelineStatus(sessionId || "", {
     query: {
       enabled: !!sessionId && !!session && ['planning', 'executing', 'reviewing'].includes(session.status),
+      queryKey: [`pipeline-status`, sessionId],
       refetchInterval: (query) => {
-        const s = query.state.data?.status;
+        const s = (query.state.data as { status?: string } | undefined)?.status;
         return (s && ['planning', 'executing', 'reviewing'].includes(s)) ? 1500 : false;
       }
     }

@@ -1,8 +1,16 @@
 import { Router, type IRouter } from "express";
 import { createRequire } from "node:module";
-const require = createRequire(import.meta.url);
-const archiver = require("archiver") as typeof import("archiver");
 import { projectDb, sessionDb } from "../lib/db";
+
+interface ArchiverInstance {
+  pipe(destination: NodeJS.WritableStream): void;
+  append(source: string | Buffer | NodeJS.ReadableStream, options?: { name?: string }): this;
+  finalize(): Promise<void>;
+}
+type ArchiverFactory = (format: string, options?: Record<string, unknown>) => ArchiverInstance;
+
+const require = createRequire(import.meta.url);
+const createArchiver = require("archiver") as ArchiverFactory;
 
 const router: IRouter = Router();
 
@@ -31,7 +39,7 @@ router.get("/sessions/:sessionId/download", async (req, res): Promise<void> => {
   res.setHeader("Content-Type", "application/zip");
   res.setHeader("Content-Disposition", `attachment; filename="${projectName}.zip"`);
 
-  const archive = archiver("zip", { zlib: { level: 9 } });
+  const archive = createArchiver("zip", { zlib: { level: 9 } });
   archive.pipe(res);
 
   for (const file of files) {

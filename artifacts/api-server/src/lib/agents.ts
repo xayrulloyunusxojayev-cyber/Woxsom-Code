@@ -217,15 +217,15 @@ Focus on robust, secure implementation with proper error handling. Do not includ
       task: "Security audit and performance optimization",
     });
 
-    logger.info({ sessionId }, "Group C: Critics starting");
+    logger.info({ sessionId }, "Group C: Critic starting");
 
-    const [criticResult, optimizerResult] = await Promise.all([
-      callGroq(
-        reviewModel,
-        [
-          {
-            role: "system",
-            content: `You are the Critic agent in Woxsom Code. You review generated code for:
+    // Critic runs first so Optimizer can incorporate its findings
+    const criticResult = await callGroq(
+      reviewModel,
+      [
+        {
+          role: "system",
+          content: `You are the Critic agent in Woxsom Code. You review generated code for:
 1. Bugs and logical errors
 2. Missing functionality from the spec
 3. Code quality and best practices
@@ -237,21 +237,32 @@ Provide:
 - A final quality score (0-100)
 
 If code is good, still output the final merged file structure with all corrections applied.`,
-          },
-          {
-            role: "user",
-            content: `Review this generated project:\n\nPLAN:\n${plannerResult}\n\nFRONTEND CODE:\n${frontendResult}\n\nBACKEND CODE:\n${backendResult}\n\nOriginal request: ${userPrompt}`,
-          },
-        ],
-        { maxTokens: 4096, temperature: 0.3 }
-      ),
+        },
+        {
+          role: "user",
+          content: `Review this generated project:\n\nPLAN:\n${plannerResult}\n\nFRONTEND CODE:\n${frontendResult}\n\nBACKEND CODE:\n${backendResult}\n\nOriginal request: ${userPrompt}`,
+        },
+      ],
+      { maxTokens: 4096, temperature: 0.3 }
+    );
 
-      callGroq(
-        securityModel,
-        [
-          {
-            role: "system",
-            content: `You are the Optimizer/Security agent in Woxsom Code. You:
+    updateAgent(sessionId, "Critic", { status: "done" });
+    addSystemMessage(
+      sessionId,
+      `**Critic Review**\n\n${criticResult}`,
+      "critic",
+      "Critic"
+    );
+
+    logger.info({ sessionId }, "Group C: Optimizer starting");
+
+    // Optimizer receives the critic's findings and produces the final packaged output
+    const optimizerResult = await callGroq(
+      securityModel,
+      [
+        {
+          role: "system",
+          content: `You are the Optimizer/Security agent in Woxsom Code. You:
 1. Check for security vulnerabilities (XSS, injection, auth issues)
 2. Optimize performance bottlenecks
 3. Add missing configuration files (.gitignore, package.json, tsconfig.json, README.md, .env.example, .vscode/settings.json)
@@ -260,25 +271,17 @@ If code is good, still output the final merged file structure with all correctio
 Output the final complete file set including ALL configuration files needed to run the project.
 Use the format: \`\`\`filepath:filename\`\`\` for each file.
 Always include: package.json, tsconfig.json, .gitignore, README.md, .env.example, .vscode/settings.json`,
-          },
-          {
-            role: "user",
-            content: `Optimize and finalize this project:\n\nPLAN:\n${plannerResult}\n\nFRONTEND:\n${frontendResult}\n\nBACKEND:\n${backendResult}\n\nCRITIC REVIEW:\n${criticResult}`,
-          },
-        ],
-        { maxTokens: 4096, temperature: 0.3 }
-      ),
-    ]);
+        },
+        {
+          role: "user",
+          content: `Optimize and finalize this project:\n\nPLAN:\n${plannerResult}\n\nFRONTEND:\n${frontendResult}\n\nBACKEND:\n${backendResult}\n\nCRITIC REVIEW:\n${criticResult}`,
+        },
+      ],
+      { maxTokens: 4096, temperature: 0.3 }
+    );
 
-    updateAgent(sessionId, "Critic", { status: "done" });
     updateAgent(sessionId, "Optimizer", { status: "done" });
 
-    addSystemMessage(
-      sessionId,
-      `**Critic Review**\n\n${criticResult}`,
-      "critic",
-      "Critic"
-    );
     addSystemMessage(
       sessionId,
       `**Optimizer Output — Project Finalized**\n\n${optimizerResult}`,
