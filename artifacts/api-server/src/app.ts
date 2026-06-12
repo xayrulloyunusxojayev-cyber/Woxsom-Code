@@ -34,6 +34,7 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Load persisted Groq API keys on startup
 const savedKeys = keyDb.get();
 if (savedKeys.length > 0) {
   setGroqKeys(savedKeys);
@@ -44,39 +45,26 @@ if (savedKeys.length > 0) {
 app.use("/api", router);
 
 // --- Frontend static files & SPA fallback ---
-// Список путей, где может находиться собранный фронтенд
-const possiblePaths = [
-  path.resolve(__dirname, "../../woxsom-code/dist"), 
-  path.resolve(__dirname, "../woxsom-code/dist"),
-  path.resolve(process.cwd(), "woxsom-code/dist"),
-  path.resolve(process.cwd(), "dist")
-];
+// Укажите корректный относительный путь к папке dist вашего фронтенда
+const frontendDist = path.resolve(__dirname, "../../woxsom-code/dist");
+const frontendExists = fs.existsSync(frontendDist);
 
-const foundPath = possiblePaths.find(p => fs.existsSync(p));
+if (frontendExists) {
+  app.use(express.static(frontendDist));
 
-if (foundPath) {
-  app.use(express.static(foundPath));
-
-  // Используем регулярное выражение /.*/ для перехвата всех путей.
-  // В Express 5 это обходит PathError, возникающую при использовании '*'
-  app.get(/.*/, (req: Request, res: Response, next: NextFunction) => {
-    // Если путь начинается с /api, это API-запрос, пропускаем его
+  // SPA fallback: для работы React Router
+  app.get("*", (req: Request, res: Response, next: NextFunction) => {
+    // Если запрос начинается с /api, пропускаем его (уже обработан выше)
     if (req.path.startsWith("/api")) return next();
     
-    // Для всего остального отдаем index.html (для работы SPA)
-    res.sendFile(path.join(foundPath, "index.html"), (err) => {
+    res.sendFile(path.join(frontendDist, "index.html"), (err) => {
       if (err) next(err);
     });
   });
 } else {
-  // Если не нашли фронтенд, выводим отладочный JSON
+  // Заглушка, если фронтенд еще не собран
   app.get("/", (_req, res) => {
-    res.json({ 
-      status: "Frontend not found",
-      message: "API is working, but couldn't locate build folder",
-      searchedPaths: possiblePaths,
-      cwd: process.cwd()
-    });
+    res.json({ status: "API Server running (frontend not found)" });
   });
 }
 
