@@ -1,0 +1,52 @@
+June 12, 2026 at 9:57 AM
+failed
+58fb84b
+Update app.ts
+
+Rollback
+Exited with status 1 while building your code.
+Read our docs for common ways to troubleshoot your deploy.
+
+All logs
+Search
+Search logs
+
+Jun 12, 9:56 AM - 9:58 AM
+PDT
+
+
+
+==> Downloading cache...
+==> Cloning from https://github.com/xayrulloyunusxojayev-cyber/Woxsom-Code
+==> Checking out commit 58fb84b94e1142d6aace333693f1844fbe6fb916 in branch main
+==> Downloaded 96MB in 1s. Extraction took 5s.
+==> Using Node.js version 24.14.1 (default)
+==> Docs on specifying a Node.js version: https://render.com/docs/node-version
+==> Running build command 'pnpm run typecheck:libs && pnpm --filter @workspace/api-server run build'...
+> workspace@0.0.0 typecheck:libs /opt/render/project/src
+> tsc --build
+error TS2688: Cannot find type definition file for 'node'.
+  The file is in the program because:
+    Entry point of type library 'node' specified in compilerOptions
+lib/db/src/index.ts(1,25): error TS2307: Cannot find module 'drizzle-orm/node-postgres' or its corresponding type declarations.
+lib/db/src/index.ts(2,16): error TS2307: Cannot find module 'pg' or its corresponding type declarations.
+lib/db/src/index.ts(7,6): error TS2591: Cannot find name 'process'. Do you need to install type definitions for node? Try `npm i --save-dev @types/node` and then add 'node' to the types field in your tsconfig.
+lib/db/src/index.ts(13,50): error TS2591: Cannot find name 'process'. Do you need to install type definitions for node? Try `npm i --save-dev @types/node` and then add 'node' to the types field in your tsconfig.
+lib/api-client-react/src/generated/api.ts(11,8): error TS2307: Cannot find module '@tanstack/react-query' or its corresponding type declarations.
+lib/api-client-react/src/generated/api.ts(20,8): error TS2307: Cannot find module '@tanstack/react-query' or its corresponding type declarations.
+lib/api-client-react/src/generated/api.ts(92,80): error TS7031: Binding element 'signal' implicitly has an 'any' type.
+lib/api-client-react/src/generated/api.ts(168,116): error TS7006: Parameter 'props' implicitly has an 'any' type.
+lib/api-client-react/src/generated/api.ts(242,84): error TS7031: Binding element 'signal' implicitly has an 'any' type.
+lib/api-client-react/src/generated/api.ts(319,81): error TS7031: Binding element 'signal' implicitly has an 'any' type.
+lib/api-client-react/src/generated/api.ts(394,120): error TS7006: Parameter 'props' implicitly has an 'any' type.
+lib/api-client-react/src/generated/api.ts(467,79): error TS7031: Binding element 'signal' implicitly has an 'any' type.
+lib/api-client-react/src/generated/api.ts(541,109): error TS7006: Parameter 'props' implicitly has an 'any' type.
+lib/api-client-react/src/generated/api.ts(613,136): error TS7006: Parameter 'props' implicitly has an 'any' type.
+lib/api-client-react/src/generated/api.ts(686,86): error TS7031: Binding element 'signal' implicitly has an 'any' type.
+lib/api-client-react/src/generated/api.ts(763,84): error TS7031: Binding element 'signal' implicitly has an 'any' type.
+lib/api-client-react/src/generated/api.ts(840,79): error TS7031: Binding element 'signal' implicitly has an 'any' type.
+lib/api-zod/src/generated/api.ts(8,22): error TS2307: Cannot find module 'zod' or its corresponding type declarations.
+ ELIFECYCLE  Command failed with exit code 1.
+==> Build failed 😞
+==> Common ways to troubleshoot your deploy: https://render.com/docs/troubleshooting-deploys
+Need better ways to work with logs? Try theRender CLI, Render MCP Server, or set up a log stream integration 
