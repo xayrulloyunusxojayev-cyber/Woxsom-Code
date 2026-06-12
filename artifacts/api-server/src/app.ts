@@ -40,11 +40,13 @@ if (savedKeys.length > 0) {
   logger.info({ keyCount: savedKeys.length }, "Loaded persisted Groq API keys");
 }
 
+// --- API routes ---
 app.use("/api", router);
 
-// --- Поиск фронтенда и SPA fallback ---
+// --- Frontend static files & SPA fallback ---
+// Список путей, где может находиться собранный фронтенд
 const possiblePaths = [
-  path.resolve(__dirname, "../../woxsom-code/dist"),
+  path.resolve(__dirname, "../../woxsom-code/dist"), 
   path.resolve(__dirname, "../woxsom-code/dist"),
   path.resolve(process.cwd(), "woxsom-code/dist"),
   path.resolve(process.cwd(), "dist")
@@ -55,23 +57,24 @@ const foundPath = possiblePaths.find(p => fs.existsSync(p));
 if (foundPath) {
   app.use(express.static(foundPath));
 
-  // Использование "/*" вместо "*" для совместимости с Express 5
-  app.get("/*", (req: Request, res: Response, next: NextFunction) => {
-    // Если запрос начинается с /api, игнорируем его и идем дальше
+  // Используем регулярное выражение /.*/ для перехвата всех путей.
+  // В Express 5 это обходит PathError, возникающую при использовании '*'
+  app.get(/.*/, (req: Request, res: Response, next: NextFunction) => {
+    // Если путь начинается с /api, это API-запрос, пропускаем его
     if (req.path.startsWith("/api")) return next();
     
-    // Отправляем index.html для любого другого маршрута (SPA)
+    // Для всего остального отдаем index.html (для работы SPA)
     res.sendFile(path.join(foundPath, "index.html"), (err) => {
       if (err) next(err);
     });
   });
 } else {
-  // Отладочный вывод, если папка не найдена
+  // Если не нашли фронтенд, выводим отладочный JSON
   app.get("/", (_req, res) => {
     res.json({ 
       status: "Frontend not found",
       message: "API is working, but couldn't locate build folder",
-      searched: possiblePaths,
+      searchedPaths: possiblePaths,
       cwd: process.cwd()
     });
   });
