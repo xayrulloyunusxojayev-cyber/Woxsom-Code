@@ -34,37 +34,41 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Load persisted Groq API keys on startup
 const savedKeys = keyDb.get();
 if (savedKeys.length > 0) {
   setGroqKeys(savedKeys);
   logger.info({ keyCount: savedKeys.length }, "Loaded persisted Groq API keys");
 }
 
-// --- API routes ---
 app.use("/api", router);
 
-// --- Frontend static files & SPA fallback ---
-// Укажите корректный относительный путь к папке dist вашего фронтенда
-const frontendDist = path.resolve(__dirname, "../../woxsom-code/dist");
-const frontendExists = fs.existsSync(frontendDist);
+// --- Расширенная логика поиска фронтенда ---
+// __dirname указывает на папку, где лежит скомпилированный app.js (обычно api-server/dist)
+const possiblePaths = [
+  path.resolve(__dirname, "../../woxsom-code/dist"),
+  path.resolve(__dirname, "../woxsom-code/dist"),
+  path.resolve(process.cwd(), "woxsom-code/dist"),
+  path.resolve(process.cwd(), "dist")
+];
 
-if (frontendExists) {
-  app.use(express.static(frontendDist));
+const foundPath = possiblePaths.find(p => fs.existsSync(p));
 
-  // SPA fallback: для работы React Router
+if (foundPath) {
+  app.use(express.static(foundPath));
   app.get("*", (req: Request, res: Response, next: NextFunction) => {
-    // Если запрос начинается с /api, пропускаем его (уже обработан выше)
     if (req.path.startsWith("/api")) return next();
-    
-    res.sendFile(path.join(frontendDist, "index.html"), (err) => {
-      if (err) next(err);
-    });
+    res.sendFile(path.join(foundPath, "index.html"));
   });
 } else {
-  // Заглушка, если фронтенд еще не собран
+  // Если не нашли, выводим отладочную информацию
   app.get("/", (_req, res) => {
-    res.json({ status: "API Server running (frontend not found)" });
+    res.json({ 
+      status: "Frontend not found",
+      message: "API is working, but couldn't locate build folder",
+      searched: possiblePaths,
+      cwd: process.cwd(),
+      dirname: __dirname
+    });
   });
 }
 
