@@ -3,6 +3,8 @@ import cors from "cors";
 import pinoHttp from "pino-http";
 import router from "./routes";
 import { logger } from "./lib/logger";
+import { keyDb } from "./lib/db";
+import { setGroqKeys } from "./lib/groq";
 
 const app: Express = express();
 
@@ -28,6 +30,13 @@ app.use(
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Load persisted Groq API keys on startup
+const savedKeys = keyDb.get();
+if (savedKeys.length > 0) {
+  setGroqKeys(savedKeys);
+  logger.info({ keyCount: savedKeys.length }, "Loaded persisted Groq API keys");
+}
 
 app.use("/api", router);
 

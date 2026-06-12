@@ -3,13 +3,21 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Woxsom Code API - Multi-agent AI coding assistant
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: keys
+    description: API key management
+  - name: sessions
+    description: Chat session management
+  - name: messages
+    description: Message and agent pipeline
+  - name: models
+    description: Model information
 paths:
   /healthz:
     get:
@@ -24,6 +32,204 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /keys:
+    post:
+      operationId: setApiKeys
+      tags: [keys]
+      summary: Set Groq API keys
+      description: Store 5 Groq API keys for multi-agent use
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApiKeyInput"
+      responses:
+        "200":
+          description: Keys stored
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiKeyStatus"
+    get:
+      operationId: getApiKeyStatus
+      tags: [keys]
+      summary: Get API key status
+      description: Returns whether API keys are configured
+      responses:
+        "200":
+          description: Key status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiKeyStatus"
+
+  /sessions:
+    get:
+      operationId: listSessions
+      tags: [sessions]
+      summary: List all chat sessions
+      responses:
+        "200":
+          description: List of sessions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Session"
+    post:
+      operationId: createSession
+      tags: [sessions]
+      summary: Create a new chat session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SessionInput"
+      responses:
+        "201":
+          description: Session created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
+
+  /sessions/{sessionId}:
+    get:
+      operationId: getSession
+      tags: [sessions]
+      summary: Get session with messages
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Session with messages
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionDetail"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: deleteSession
+      tags: [sessions]
+      summary: Delete a session
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  /sessions/{sessionId}/messages:
+    post:
+      operationId: sendMessage
+      tags: [messages]
+      summary: Send a message and trigger agent pipeline
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MessageInput"
+      responses:
+        "200":
+          description: Message accepted, pipeline started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /sessions/{sessionId}/status:
+    get:
+      operationId: getPipelineStatus
+      tags: [messages]
+      summary: Get agent pipeline status for a session
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Pipeline status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PipelineStatus"
+
+  /sessions/{sessionId}/download:
+    get:
+      operationId: downloadProject
+      tags: [sessions]
+      summary: Download generated project as ZIP
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: ZIP file
+          content:
+            application/zip:
+              schema:
+                type: string
+                format: binary
+        "404":
+          description: No project generated yet
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /models:
+    get:
+      operationId: listModels
+      tags: [models]
+      summary: List available AI models with capabilities
+      responses:
+        "200":
+          description: Available models
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ModelInfo"
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +240,175 @@ components:
       required:
         - status
 
+    ApiKeyInput:
+      type: object
+      required: [keys]
+      properties:
+        keys:
+          type: array
+          items:
+            type: string
+          minItems: 1
+          maxItems: 5
+          description: Array of 1-5 Groq API keys
+
+    ApiKeyStatus:
+      type: object
+      required: [configured, keyCount]
+      properties:
+        configured:
+          type: boolean
+        keyCount:
+          type: integer
+        maskedKeys:
+          type: array
+          items:
+            type: string
+
+    Session:
+      type: object
+      required: [id, title, createdAt, updatedAt, messageCount, status]
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+        messageCount:
+          type: integer
+        status:
+          type: string
+          enum: [idle, planning, executing, reviewing, done, error]
+        hasProject:
+          type: boolean
+
+    SessionInput:
+      type: object
+      required: [title]
+      properties:
+        title:
+          type: string
+
+    SessionDetail:
+      type: object
+      required: [id, title, createdAt, updatedAt, status, messages]
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+        status:
+          type: string
+          enum: [idle, planning, executing, reviewing, done, error]
+        messages:
+          type: array
+          items:
+            $ref: "#/components/schemas/Message"
+        hasProject:
+          type: boolean
+        projectFiles:
+          type: array
+          items:
+            type: string
+
+    Message:
+      type: object
+      required: [id, sessionId, role, content, createdAt]
+      properties:
+        id:
+          type: string
+        sessionId:
+          type: string
+        role:
+          type: string
+          enum: [user, assistant, system, planner, executor_frontend, executor_backend, critic]
+        content:
+          type: string
+        createdAt:
+          type: string
+        agentName:
+          type: ["string", "null"]
+        metadata:
+          type: ["string", "null"]
+
+    MessageInput:
+      type: object
+      required: [content]
+      properties:
+        content:
+          type: string
+
+    PipelineStatus:
+      type: object
+      required: [sessionId, status, agents]
+      properties:
+        sessionId:
+          type: string
+        status:
+          type: string
+          enum: [idle, planning, executing, reviewing, done, error]
+        currentStep:
+          type: ["string", "null"]
+        agents:
+          type: array
+          items:
+            $ref: "#/components/schemas/AgentStatus"
+        progress:
+          type: integer
+          description: 0-100 progress percentage
+
+    AgentStatus:
+      type: object
+      required: [name, group, status]
+      properties:
+        name:
+          type: string
+        group:
+          type: string
+          enum: [A, B, C]
+        status:
+          type: string
+          enum: [idle, active, done, error]
+        model:
+          type: ["string", "null"]
+        task:
+          type: ["string", "null"]
+
+    ModelInfo:
+      type: object
+      required: [id, name, group, capability]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        group:
+          type: string
+          enum: [reasoning, fast, specialized]
+        capability:
+          type: string
+        recommended:
+          type: boolean
+
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+
+    SuccessResponse:
+      type: object
+      required: [success]
+      properties:
+        success:
+          type: boolean
+        message:
+          type: ["string", "null"]

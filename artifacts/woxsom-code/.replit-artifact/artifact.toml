@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "Woxsom Code"
+version = "1.0.0"
+id = "artifacts/woxsom-code"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 19491
+
+[services.development]
+run = "pnpm --filter @workspace/woxsom-code run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/woxsom-code", "run", "build" ]
+publicDir = "artifacts/woxsom-code/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "19491"
+BASE_PATH = "/"
