@@ -1,12 +1,8 @@
 import crypto from "node:crypto";
 import path from "node:path";
 import { mkdirSync } from "node:fs";
-import { createRequire } from "node:module";
+import { DatabaseSync } from "node:sqlite";
 import { logger } from "./logger";
-
-const require = createRequire(import.meta.url);
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const Database = require("better-sqlite3") as typeof import("better-sqlite3").default;
 
 const workspaceRoot = process.cwd().endsWith(path.join("artifacts", "api-server"))
   ? path.resolve(process.cwd(), "../..")
@@ -18,7 +14,6 @@ mkdirSync(dataDir, { recursive: true });
 const DB_PATH = path.join(dataDir, "secrets.db");
 
 const SESSION_SECRET = process.env.SESSION_SECRET ?? "woxsom-default-secret-v1-please-set-in-prod";
-
 const ENCRYPTION_KEY = crypto.scryptSync(SESSION_SECRET, "woxsom-salt-v1", 32);
 
 function encrypt(plaintext: string): string {
@@ -48,37 +43,36 @@ interface SecretRow {
   encrypted_value: string;
 }
 
-const db = new Database(DB_PATH);
+const db = new DatabaseSync(DB_PATH);
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS EncryptedSecrets (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     key_name TEXT NOT NULL UNIQUE,
     encrypted_value TEXT NOT NULL,
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
   )
 `);
 
-logger.info({ dbPath: DB_PATH }, "EncryptedSecrets SQLite store initialized");
+logger.info({ dbPath: DB_PATH }, "EncryptedSecrets SQLite store initialized (node:sqlite)");
 
 export const secretsDb = {
   saveKeys(keys: string[]): void {
     const encrypted = encrypt(JSON.stringify(keys));
-    const stmt = db.prepare<[string]>(`
+    db.prepare(`
       INSERT INTO EncryptedSecrets (key_name, encrypted_value, updated_at)
-      VALUES ('groq_api_keys', ?, datetime('now'))
+      VALUES ('groq_api_keys', ?, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
       ON CONFLICT(key_name) DO UPDATE
         SET encrypted_value = excluded.encrypted_value,
-            updated_at = excluded.updated_at
-    `);
-    stmt.run(encrypted);
+            updated_at      = excluded.updated_at
+    `).run(encrypted);
     logger.info({ keyCount: keys.length }, "Groq API keys saved (encrypted) to SQLite");
   },
 
   getKeys(): string[] {
     const row = db
-      .prepare<[], SecretRow>("SELECT encrypted_value FROM EncryptedSecrets WHERE key_name = 'groq_api_keys'")
+      .prepare("SELECT encrypted_value FROM EncryptedSecrets WHERE key_name = 'groq_api_keys'")
       .get() as SecretRow | undefined;
     if (!row) return [];
     try {
