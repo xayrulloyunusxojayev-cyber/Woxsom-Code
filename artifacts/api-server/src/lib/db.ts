@@ -13,7 +13,6 @@ mkdirSync(dataDir, { recursive: true });
 const SESSIONS_FILE = path.join(dataDir, "sessions.json");
 const MESSAGES_FILE = path.join(dataDir, "messages.json");
 const PROJECT_FILES_FILE = path.join(dataDir, "project_files.json");
-const KEYS_FILE = path.join(dataDir, "keys.json");
 
 function readJson<T>(filePath: string, fallback: T): T {
   if (!existsSync(filePath)) return fallback;
@@ -191,16 +190,5 @@ export const projectDb = {
   getFiles(sessionId: string): ProjectFile[] {
     const allFiles = readJson<ProjectFileRecord[]>(PROJECT_FILES_FILE, []);
     return allFiles.filter((f) => f.sessionId === sessionId).map((f) => ({ filePath: f.filePath, content: f.content }));
-  },
-};
-
-export const keyDb = {
-  save(keys: string[]): void {
-    writeJson(KEYS_FILE, { keys });
-  },
-
-  get(): string[] {
-    const data = readJson<{ keys?: string[] }>(KEYS_FILE, {});
-    return data.keys ?? [];
   },
 };

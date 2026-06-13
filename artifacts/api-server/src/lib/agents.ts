@@ -1,4 +1,4 @@
-import { callGroq, GroqAuthError } from "./groq";
+import { callGroq, GroqAuthError, hasGroqKeys } from "./groq";
 import { messageDb, sessionDb, projectDb, type ProjectFile } from "./db";
 import { selectModelForTask } from "./models";
 import { logger } from "./logger";
@@ -59,6 +59,25 @@ function addSystemMessage(sessionId: string, content: string, role: string, agen
 }
 
 export async function runAgentPipeline(sessionId: string, userPrompt: string): Promise<void> {
+  // ─── PRE-FLIGHT: check for API keys before doing anything ─────────────────
+  if (!hasGroqKeys()) {
+    updatePipeline(sessionId, {
+      status: "needs_keys",
+      currentStep: "No API keys configured",
+      progress: 0,
+      agents: defaultAgents(),
+    });
+    sessionDb.updateStatus(sessionId, "needs_keys");
+    addSystemMessage(
+      sessionId,
+      `**API Keys Required**\n\nNo Groq API keys are configured. The agent pipeline cannot start.\n\nPlease go to **Settings** → add your Groq API key(s) → then start a new session.\n\nGet free keys at [console.groq.com/keys](https://console.groq.com/keys).`,
+      "system",
+      "System"
+    );
+    logger.warn({ sessionId }, "Pipeline aborted — no API keys configured");
+    return;
+  }
+
   const plannerModel = selectModelForTask("planning");
   const frontendModel = selectModelForTask("frontend");
   const backendModel = selectModelForTask("backend");
@@ -219,7 +238,6 @@ Focus on robust, secure implementation with proper error handling. Do not includ
 
     logger.info({ sessionId }, "Group C: Critic starting");
 
-    // Critic runs first so Optimizer can incorporate its findings
     const criticResult = await callGroq(
       reviewModel,
       [
@@ -256,7 +274,6 @@ If code is good, still output the final merged file structure with all correctio
 
     logger.info({ sessionId }, "Group C: Optimizer starting");
 
-    // Optimizer receives the critic's findings and produces the final packaged output
     const optimizerResult = await callGroq(
       securityModel,
       [
@@ -322,7 +339,6 @@ Always include: package.json, tsconfig.json, .gitignore, README.md, .env.example
     const isAuthError = err instanceof GroqAuthError;
     logger.error({ sessionId, error: error.message, isAuthError }, "Pipeline error");
 
-    // Mark any still-active agents as errored
     pipelines.get(sessionId)?.agents.forEach((a) => {
       if (a.status === "active") {
         updateAgent(sessionId, a.name, { status: "error" });
@@ -338,7 +354,7 @@ Always include: package.json, tsconfig.json, .gitignore, README.md, .env.example
       sessionDb.updateStatus(sessionId, "needs_keys");
       addSystemMessage(
         sessionId,
-        `**Authentication Error**\n\n${error.message}\n\nYour Groq API key was rejected. Go to **Settings** and enter a valid key, then start a new session.`,
+        `**Authentication Error**\n\n${error.message}\n\nYour Groq API key was rejected. Go to **Settings**, delete the current key and add a valid one, then start a new session.`,
         "system",
         "System"
       );

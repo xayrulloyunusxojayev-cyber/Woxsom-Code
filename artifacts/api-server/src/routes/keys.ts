@@ -1,33 +1,23 @@
 import { Router, type IRouter } from "express";
-import { keyDb } from "../lib/db";
-import { setGroqKeys, getGroqKeys, getKeySource } from "../lib/groq";
+import { secretsDb } from "../lib/secrets";
+import { setGroqKeys, getGroqKeys, hasGroqKeys } from "../lib/groq";
 
 const router: IRouter = Router();
 
 router.get("/keys", (_req, res): void => {
-  const source = getKeySource();
   const activeKeys = getGroqKeys();
+  const configured = activeKeys.length > 0;
 
   res.json({
-    configured: activeKeys.length > 0,
+    configured,
     keyCount: activeKeys.length,
-    source,
-    readonly: source === "env",
+    source: "stored" as const,
+    readonly: false,
     maskedKeys: activeKeys.map((k) => k.slice(0, 8) + "..." + k.slice(-4)),
   });
 });
 
 router.post("/keys", (req, res): void => {
-  // When keys come from env vars, reject UI changes — env is the source of truth
-  if (getKeySource() === "env") {
-    res.status(403).json({
-      error:
-        "API keys are loaded from environment variables and cannot be changed via the UI. " +
-        "Update GROQ_KEY_1 … GROQ_KEY_5 in your Render dashboard instead.",
-    });
-    return;
-  }
-
   const { keys } = req.body as { keys: string[] };
 
   if (!Array.isArray(keys) || keys.length === 0) {
@@ -41,10 +31,10 @@ router.post("/keys", (req, res): void => {
     return;
   }
 
-  keyDb.save(validKeys);
+  secretsDb.saveKeys(validKeys);
   setGroqKeys(validKeys);
 
-  req.log.info({ keyCount: validKeys.length }, "API keys updated");
+  req.log.info({ keyCount: validKeys.length }, "API keys saved to EncryptedSecrets and loaded into pool");
 
   res.json({
     configured: true,
@@ -55,4 +45,12 @@ router.post("/keys", (req, res): void => {
   });
 });
 
+router.delete("/keys", (_req, res): void => {
+  secretsDb.deleteKeys();
+  setGroqKeys([]);
+
+  res.json({ configured: false, keyCount: 0, source: "stored" as const, readonly: false, maskedKeys: [] });
+});
+
+export { hasGroqKeys };
 export default router;

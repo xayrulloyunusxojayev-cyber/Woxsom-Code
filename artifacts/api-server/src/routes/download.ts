@@ -1,11 +1,16 @@
 import { Router, type IRouter } from "express";
+import { PassThrough } from "node:stream";
 import { createRequire } from "node:module";
 import { projectDb, sessionDb } from "../lib/db";
+import { logger } from "../lib/logger";
 
 interface ArchiverInstance {
   pipe(destination: NodeJS.WritableStream): void;
   append(source: string | Buffer | NodeJS.ReadableStream, options?: { name?: string }): this;
   finalize(): Promise<void>;
+  on(event: "error", listener: (err: Error) => void): this;
+  on(event: "warning", listener: (err: Error) => void): this;
+  on(event: string, listener: (...args: unknown[]) => void): this;
 }
 type ArchiverFactory = (format: string, options?: Record<string, unknown>) => ArchiverInstance;
 
@@ -38,9 +43,27 @@ router.get("/sessions/:sessionId/download", async (req, res): Promise<void> => {
 
   res.setHeader("Content-Type", "application/zip");
   res.setHeader("Content-Disposition", `attachment; filename="${projectName}.zip"`);
+  res.setHeader("Cache-Control", "no-cache");
+
+  const passThrough = new PassThrough();
+  passThrough.pipe(res);
 
   const archive = createArchiver("zip", { zlib: { level: 9 } });
-  archive.pipe(res);
+
+  archive.on("error", (err: Error) => {
+    logger.error({ err: err.message, sessionId: raw }, "Archive stream error");
+    if (!res.headersSent) {
+      res.status(500).json({ error: "Failed to create archive" });
+    } else {
+      passThrough.destroy(err);
+    }
+  });
+
+  archive.on("warning", (err: Error) => {
+    logger.warn({ err: err.message, sessionId: raw }, "Archive warning");
+  });
+
+  archive.pipe(passThrough);
 
   for (const file of files) {
     archive.append(file.content, { name: file.filePath });
@@ -79,7 +102,15 @@ router.get("/sessions/:sessionId/download", async (req, res): Promise<void> => {
     );
   }
 
-  await archive.finalize();
+  try {
+    await archive.finalize();
+    logger.info({ sessionId: raw, fileCount: files.length }, "Archive streamed successfully");
+  } catch (err) {
+    logger.error({ err, sessionId: raw }, "Archive finalize error");
+    if (!res.headersSent) {
+      res.status(500).json({ error: "Failed to finalize archive" });
+    }
+  }
 });
 
 export default router;

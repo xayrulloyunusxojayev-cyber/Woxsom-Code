@@ -12,10 +12,10 @@ version = "1.0.0"
 [[services]]
 name = "web"
 paths = [ "/" ]
-localPort = 19491
+localPort = 8080
 
 [services.development]
-run = "pnpm --filter @workspace/woxsom-code run dev"
+run = "cd artifacts/api-server && PORT=8080 pnpm run dev"
 
 [services.production]
 build = [ "pnpm", "--filter", "@workspace/woxsom-code", "run", "build" ]
@@ -27,5 +27,5 @@ from = "/*"
 to = "/index.html"
 
 [services.env]
-PORT = "19491"
+PORT = "8080"
 BASE_PATH = "/"

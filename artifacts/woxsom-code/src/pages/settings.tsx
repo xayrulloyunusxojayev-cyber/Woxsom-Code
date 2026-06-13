@@ -20,8 +20,9 @@ import {
   Save,
   ShieldCheck,
   AlertTriangle,
-  ExternalLink,
-  Lock,
+  Database,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
@@ -31,8 +32,8 @@ export default function SettingsPage() {
   const { toast } = useToast();
 
   const [keys, setKeys] = useState<string[]>([""]);
+  const [showExisting, setShowExisting] = useState(false);
 
-  const isEnv = status?.source === "env";
   const isConfigured = status?.configured ?? false;
 
   const handleAddKey = () => {
@@ -60,7 +61,8 @@ export default function SettingsPage() {
       { data: { keys: validKeys } },
       {
         onSuccess: () => {
-          toast({ title: "Keys Saved", description: `${validKeys.length} key(s) saved and active.` });
+          toast({ title: "Keys Saved", description: `${validKeys.length} key(s) encrypted and saved to database.` });
+          setKeys([""]);
           void refetch();
         },
         onError: (err) => {
@@ -88,7 +90,7 @@ export default function SettingsPage() {
                   Groq API Keys
                 </CardTitle>
                 <CardDescription className="mt-1.5">
-                  Provide up to 5 keys for parallel multi-agent execution. Keys are used in round-robin rotation to bypass rate limits.
+                  Provide up to 5 keys for parallel multi-agent execution. Keys are encrypted and stored securely in the app's own database — no environment variables required.
                 </CardDescription>
               </div>
               {isLoading ? null : (
@@ -112,59 +114,22 @@ export default function SettingsPage() {
                 <Loader2 className="w-4 h-4 animate-spin" />
                 <span className="text-sm">Checking key status…</span>
               </div>
-            ) : isEnv ? (
-              /* ── ENV VAR MODE: read-only explanation ── */
-              <div className="space-y-4">
+            ) : (
+              <div className="space-y-5">
+                {/* Storage info banner */}
                 <div className="flex items-start gap-3 rounded-lg border border-primary/20 bg-primary/5 p-4">
-                  <Lock className="w-5 h-5 text-primary mt-0.5 shrink-0" />
+                  <Database className="w-5 h-5 text-primary mt-0.5 shrink-0" />
                   <div className="space-y-1">
                     <p className="text-sm font-medium text-foreground">
-                      Keys loaded from environment variables
+                      Encrypted database storage
                     </p>
                     <p className="text-sm text-muted-foreground">
-                      {status?.keyCount} key{(status?.keyCount ?? 0) !== 1 ? "s are" : " is"} active via <code className="text-primary text-xs">GROQ_KEY_1</code> … <code className="text-primary text-xs">GROQ_KEY_{status?.keyCount}</code>. These persist across redeploys and cannot be changed from this UI.
+                      Keys are encrypted with AES-256-GCM before being written to the app's built-in SQLite database. They persist across restarts and redeploys with no external configuration needed.
                     </p>
                   </div>
                 </div>
 
-                <div className="rounded-lg border border-border/40 bg-background/40 p-4 space-y-3">
-                  <p className="text-sm font-medium text-muted-foreground uppercase tracking-wider text-xs">
-                    To update keys on Render
-                  </p>
-                  <ol className="text-sm text-muted-foreground space-y-2 list-none">
-                    <li className="flex gap-2"><span className="text-primary font-mono text-xs mt-0.5">1.</span>Open your Render dashboard → your service → <strong>Environment</strong> tab</li>
-                    <li className="flex gap-2"><span className="text-primary font-mono text-xs mt-0.5">2.</span>Set <code className="text-xs bg-background/60 px-1 rounded">GROQ_KEY_1</code> through <code className="text-xs bg-background/60 px-1 rounded">GROQ_KEY_5</code> (use as many as you have)</li>
-                    <li className="flex gap-2"><span className="text-primary font-mono text-xs mt-0.5">3.</span>Save — Render will redeploy automatically and pick up the new keys</li>
-                  </ol>
-                  <a
-                    href="https://dashboard.render.com"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 text-xs text-primary hover:underline"
-                  >
-                    Open Render Dashboard <ExternalLink className="w-3 h-3" />
-                  </a>
-                </div>
-
-                {/* Masked preview */}
-                {status?.maskedKeys && status.maskedKeys.length > 0 && (
-                  <div className="space-y-2">
-                    <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Active keys (masked)</p>
-                    <div className="space-y-1.5">
-                      {status.maskedKeys.map((mk, i) => (
-                        <div key={i} className="flex items-center gap-2 rounded-md border border-border/30 bg-background/30 px-3 py-2">
-                          <Key className="w-3.5 h-3.5 text-muted-foreground/60 shrink-0" />
-                          <code className="text-xs text-muted-foreground font-mono">{mk}</code>
-                          <Lock className="w-3 h-3 text-muted-foreground/40 ml-auto shrink-0" />
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            ) : (
-              /* ── STORED / NONE MODE: editable form ── */
-              <div className="space-y-4">
+                {/* Missing key warning */}
                 {!isConfigured && (
                   <div className="flex items-start gap-3 rounded-lg border border-destructive/20 bg-destructive/5 p-4">
                     <AlertTriangle className="w-5 h-5 text-destructive mt-0.5 shrink-0" />
@@ -180,54 +145,88 @@ export default function SettingsPage() {
                   </div>
                 )}
 
-                <form id="settings-form" onSubmit={handleSubmit} className="space-y-3 max-w-xl">
-                  {keys.map((key, index) => (
-                    <div key={index} className="flex gap-2 items-center">
-                      <div className="relative flex-1">
-                        <Key className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                        <Input
-                          type="password"
-                          placeholder={`gsk_key_${index + 1}…`}
-                          className="pl-9 bg-background/50 font-mono text-sm focus-visible:ring-primary/50"
-                          value={key}
-                          onChange={(e) => handleKeyChange(index, e.target.value)}
-                          autoComplete="off"
-                        />
-                      </div>
-                      {keys.length > 1 && (
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => handleRemoveKey(index)}
-                          className="text-muted-foreground hover:text-destructive shrink-0"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
-                      )}
+                {/* Existing active keys (masked) */}
+                {isConfigured && status?.maskedKeys && status.maskedKeys.length > 0 && (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">
+                        Active keys (masked)
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => setShowExisting(!showExisting)}
+                        className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                      >
+                        {showExisting ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                        {showExisting ? "Hide" : "Show"}
+                      </button>
                     </div>
-                  ))}
-                  {keys.length < 5 && (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={handleAddKey}
-                      className="w-full border-dashed text-muted-foreground hover:text-foreground max-w-xl"
-                    >
-                      <Plus className="w-4 h-4 mr-2" /> Add Key Slot ({keys.length}/5)
-                    </Button>
-                  )}
-                </form>
+                    {showExisting && (
+                      <div className="space-y-1.5">
+                        {status.maskedKeys.map((mk, i) => (
+                          <div key={i} className="flex items-center gap-2 rounded-md border border-border/30 bg-background/30 px-3 py-2">
+                            <Key className="w-3.5 h-3.5 text-muted-foreground/60 shrink-0" />
+                            <code className="text-xs text-muted-foreground font-mono">{mk}</code>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
 
-                <p className="text-xs text-muted-foreground max-w-xl">
-                  <strong>Tip:</strong> On Render, set <code className="text-xs bg-background/60 px-1 rounded">GROQ_KEY_1</code> … <code className="text-xs bg-background/60 px-1 rounded">GROQ_KEY_5</code> as environment variables instead — they survive redeploys and take priority over keys saved here.
-                </p>
+                {/* Key entry form */}
+                <div className="space-y-2">
+                  <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">
+                    {isConfigured ? "Replace keys" : "Add keys"}
+                  </p>
+                  <form id="settings-form" onSubmit={handleSubmit} className="space-y-3 max-w-xl">
+                    {keys.map((key, index) => (
+                      <div key={index} className="flex gap-2 items-center">
+                        <div className="relative flex-1">
+                          <Key className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                          <Input
+                            type="password"
+                            placeholder={`gsk_key_${index + 1}…`}
+                            className="pl-9 bg-background/50 font-mono text-sm focus-visible:ring-primary/50"
+                            value={key}
+                            onChange={(e) => handleKeyChange(index, e.target.value)}
+                            autoComplete="off"
+                          />
+                        </div>
+                        {keys.length > 1 && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleRemoveKey(index)}
+                            className="text-muted-foreground hover:text-destructive shrink-0"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        )}
+                      </div>
+                    ))}
+                    {keys.length < 5 && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={handleAddKey}
+                        className="w-full border-dashed text-muted-foreground hover:text-foreground max-w-xl"
+                      >
+                        <Plus className="w-4 h-4 mr-2" /> Add Key Slot ({keys.length}/5)
+                      </Button>
+                    )}
+                  </form>
+                  <p className="text-xs text-muted-foreground max-w-xl">
+                    Saving new keys will replace any previously stored keys. Keys are used in round-robin rotation to bypass rate limits.
+                  </p>
+                </div>
               </div>
             )}
           </CardContent>
 
-          {!isLoading && !isEnv && (
+          {!isLoading && (
             <CardFooter className="border-t border-border/10 pt-6">
               <Button
                 type="submit"
@@ -240,7 +239,7 @@ export default function SettingsPage() {
                 ) : (
                   <Save className="w-4 h-4" />
                 )}
-                Save Configuration
+                Save & Encrypt Keys
               </Button>
             </CardFooter>
           )}
