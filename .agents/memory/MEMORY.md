@@ -1,2 +1,2 @@
-- [Encrypted secrets architecture](encrypted-secrets.md) — AES-256-GCM encrypted SQLite (node:sqlite builtin) replaces plain keys.json; no native deps needed.
+- [Secrets architecture (plain-text SQLite)](encrypted-secrets.md) — plain JSON in EncryptedSecrets table; AES-256-GCM removed due to cross-redeploy decryption failures.
 - [Render build command](render-build.md) — exact Render build/start commands and why the build script excludes mockup-sandbox.

@@ -28,15 +28,20 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// --- Key loading: encrypted SQLite is the single source of truth ---
-// Keys are managed entirely through the Settings UI and stored encrypted in
-// the EncryptedSecrets SQLite table. No env vars required.
-const storedKeys = secretsDb.getKeys();
-if (storedKeys.length > 0) {
-  setGroqKeys(storedKeys);
-  logger.info({ keyCount: storedKeys.length }, "Loaded Groq API keys from EncryptedSecrets DB");
-} else {
-  logger.warn("No Groq API keys found — add keys via the Settings page");
+// --- Key loading: SQLite is the single source of truth ---
+// No environment variables required. If the table is empty the app boots
+// normally and the UI shows a 'needs_keys' status prompting the user to
+// add keys via the Settings page.
+try {
+  const storedKeys = secretsDb.getKeys();
+  if (storedKeys.length > 0) {
+    setGroqKeys(storedKeys);
+    logger.info({ keyCount: storedKeys.length }, "Loaded Groq API keys from EncryptedSecrets DB");
+  } else {
+    logger.warn("No Groq API keys found — add keys via the Settings page");
+  }
+} catch (err) {
+  logger.error({ err }, "Failed to load Groq API keys from DB — app will run in needs_keys mode");
 }
 
 // --- API routes (mounted first so they always win) ---

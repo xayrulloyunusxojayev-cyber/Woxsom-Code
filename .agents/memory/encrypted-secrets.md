@@ -1,16 +1,17 @@
 ---
-name: Encrypted secrets architecture
-description: How Groq API keys are stored — node:sqlite builtin + AES-256-GCM, no native modules.
+name: Secrets architecture (plain-text SQLite)
+description: How Groq API keys are stored — node:sqlite builtin, plain JSON, no encryption, no native deps.
 ---
 
 ## Rule
-API keys are stored encrypted in `artifacts/api-server/data/secrets.db` using Node.js's built-in `node:sqlite` module (available in Node 22.5+, stable in Node 24). Do NOT re-introduce `better-sqlite3` or any other native SQLite binding.
+API keys are stored as plain JSON text in `artifacts/api-server/data/secrets.db` using Node.js's built-in `node:sqlite` module (Node 22.5+, stable in Node 24). The column is still named `encrypted_value` for schema compatibility, but the value is unencrypted JSON.
 
-**Why:** `better-sqlite3` requires `node-gyp` / Python for native compilation. On Render (and many CI environments) this fails when no prebuilt binary matches the runtime. `node:sqlite` is built into Node.js 24 — zero install, zero compilation.
+**Why:** AES-256-GCM encryption caused persistent decryption failures across Render redeploys because the derived key (from SESSION_SECRET) was not consistent across restarts. Since this is a private internal tool, plain-text storage was chosen for stability.
 
 **How to apply:**
 - `secrets.ts` uses `import { DatabaseSync } from 'node:sqlite'`
-- Encryption: AES-256-GCM with key derived via `crypto.scryptSync(SESSION_SECRET, 'woxsom-salt-v1', 32)`
-- `SESSION_SECRET` env var is optional — there is a hardcoded fallback for zero-config deployments
+- NO encryption/decryption — `saveKeys()` calls `JSON.stringify(keys)`, `getKeys()` calls `JSON.parse(row.encrypted_value)`
+- No `SESSION_SECRET` or `ENCRYPTION_KEY` env vars needed
 - The `EncryptedSecrets` table lives in `artifacts/api-server/data/secrets.db`
 - `secretsDb.saveKeys()`, `getKeys()`, `deleteKeys()` are the full public API
+- Do NOT re-introduce encryption without user approval
