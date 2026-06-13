@@ -45,15 +45,14 @@ if (savedKeys.length > 0) {
 app.use("/api", router);
 
 // --- Frontend static files & SPA fallback ---
-// Укажите корректный относительный путь к папке dist вашего фронтенда
 const frontendDist = path.resolve(__dirname, "../../woxsom-code/dist");
 const frontendExists = fs.existsSync(frontendDist);
 
 if (frontendExists) {
   app.use(express.static(frontendDist));
 
-  // SPA fallback: для работы React Router
-  app.get("*", (req: Request, res: Response, next: NextFunction) => {
+  // ИСПРАВЛЕННЫЙ SPA fallback: используем регулярное выражение для обхода ограничений path-to-regexp v8
+  app.get("/(.*)", (req: Request, res: Response, next: NextFunction) => {
     // Если запрос начинается с /api, пропускаем его (уже обработан выше)
     if (req.path.startsWith("/api")) return next();
     
