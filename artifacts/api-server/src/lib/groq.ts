@@ -30,7 +30,7 @@ export class GroqAuthError extends Error {
 let keyPool: string[] = [];
 let keyIndex = 0;
 
-/** Load keys from the encrypted DB store (primary source of truth). */
+/** Load keys from the DB store (primary source of truth). */
 export function setGroqKeys(keys: string[]): void {
   keyPool = keys.filter((k) => k && k.trim().length > 0);
   keyIndex = 0;
@@ -53,10 +53,12 @@ function nextKey(): string | null {
   return key;
 }
 
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 export async function callGroq(
   model: string,
   messages: GroqMessage[],
-  options: { maxTokens?: number; temperature?: number } = {}
+  options: { maxTokens?: number; temperature?: number; retries?: number } = {}
 ): Promise<string> {
   const apiKey = nextKey();
   if (!apiKey) {
@@ -65,40 +67,59 @@ export async function callGroq(
     );
   }
 
-  const { maxTokens = 4096, temperature = 0.7 } = options;
+  const { maxTokens = 2048, temperature = 0.7, retries = 3 } = options;
 
-  logger.info({ model, keyIndex: (keyIndex - 1) % keyPool.length }, "Calling Groq API");
+  logger.info({ model, keyIndex: (keyIndex - 1) % keyPool.length, maxTokens }, "Calling Groq API");
 
-  const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model,
-      messages,
-      max_tokens: maxTokens,
-      temperature,
-    }),
-  });
+  let lastError: Error | null = null;
 
-  if (response.status === 401 || response.status === 403) {
-    const errorText = await response.text().catch(() => "");
-    logger.error({ status: response.status, model, error: errorText }, "Groq auth rejected");
-    throw new GroqAuthError(
-      `Groq rejected the API key (HTTP ${response.status}). Please update your keys in Settings.`
-    );
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    if (attempt > 1) {
+      const backoffMs = Math.min(1000 * Math.pow(2, attempt - 1), 16000);
+      logger.warn({ model, attempt, backoffMs }, "Groq retry with backoff");
+      await sleep(backoffMs);
+    }
+
+    const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model,
+        messages,
+        max_tokens: maxTokens,
+        temperature,
+      }),
+    });
+
+    if (response.status === 401 || response.status === 403) {
+      const errorText = await response.text().catch(() => "");
+      logger.error({ status: response.status, model, error: errorText }, "Groq auth rejected");
+      throw new GroqAuthError(
+        `Groq rejected the API key (HTTP ${response.status}). Please update your keys in Settings.`
+      );
+    }
+
+    if (response.status === 429 || response.status === 413) {
+      const errorText = await response.text().catch(() => "");
+      logger.warn({ status: response.status, model, attempt, error: errorText }, "Groq rate limit — will retry");
+      lastError = new Error(`Groq API error (${response.status}): ${errorText}`);
+      continue;
+    }
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      logger.error({ status: response.status, model, error: errorText }, "Groq API error");
+      throw new Error(`Groq API error (${response.status}): ${errorText}`);
+    }
+
+    const data = (await response.json()) as GroqResponse;
+    const content = data.choices?.[0]?.message?.content ?? "";
+    logger.info({ model, tokens: data.usage?.completion_tokens, promptTokens: data.usage?.prompt_tokens }, "Groq response received");
+    return content;
   }
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    logger.error({ status: response.status, model, error: errorText }, "Groq API error");
-    throw new Error(`Groq API error (${response.status}): ${errorText}`);
-  }
-
-  const data = (await response.json()) as GroqResponse;
-  const content = data.choices?.[0]?.message?.content ?? "";
-  logger.info({ model, tokens: data.usage?.completion_tokens }, "Groq response received");
-  return content;
+  throw lastError ?? new Error(`Groq API failed after ${retries} retries`);
 }

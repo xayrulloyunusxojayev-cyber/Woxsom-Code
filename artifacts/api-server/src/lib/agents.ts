@@ -58,6 +58,18 @@ function addSystemMessage(sessionId: string, content: string, role: string, agen
   messageDb.add(sessionId, role, content, agentName);
 }
 
+/**
+ * Truncate a string to a maximum number of characters, appending an indicator
+ * if truncated. This prevents context explosion when passing one agent's output
+ * to the next stage.
+ */
+function truncate(text: string, maxChars: number): string {
+  if (text.length <= maxChars) return text;
+  return text.slice(0, maxChars) + `\n\n[...truncated — ${text.length - maxChars} chars omitted for context budget]`;
+}
+
+const COT_INSTRUCTION = `You are a focused agent. Complete ONLY your assigned task in this message. Do not jump ahead to other stages. Think step by step before writing any output. Output your reasoning first, then your result.`;
+
 export async function runAgentPipeline(sessionId: string, userPrompt: string): Promise<void> {
   // ─── PRE-FLIGHT: check for API keys before doing anything ─────────────────
   if (!hasGroqKeys()) {
@@ -70,7 +82,7 @@ export async function runAgentPipeline(sessionId: string, userPrompt: string): P
     sessionDb.updateStatus(sessionId, "needs_keys");
     addSystemMessage(
       sessionId,
-      `**API Keys Required**\n\nNo Groq API keys are configured. The agent pipeline cannot start.\n\nPlease go to **Settings** → add your Groq API key(s) → then start a new session.\n\nGet free keys at [console.groq.com/keys](https://console.groq.com/keys).`,
+      `**API Keys Required**\n\nNo Groq API keys are configured. The agent pipeline cannot start.\n\nPlease go to **API Keys** in the sidebar, add your Groq API key(s), then start a new session.\n\nGet free keys at [console.groq.com/keys](https://console.groq.com/keys).`,
       "system",
       "System"
     );
@@ -94,43 +106,47 @@ export async function runAgentPipeline(sessionId: string, userPrompt: string): P
 
   try {
     // ─── GROUP A: PLANNER ────────────────────────────────────────────────────
+    console.log(`--- [${sessionId}] Starting Planner Stage ---`);
+    logger.info({ sessionId, model: plannerModel }, "Group A: Planner starting");
+
     updateAgent(sessionId, "Planner", {
       status: "active",
       model: plannerModel,
       task: "Decomposing project and selecting tech stack",
     });
 
-    logger.info({ sessionId, model: plannerModel }, "Group A: Planner starting");
-
     const plannerResult = await callGroq(
       plannerModel,
       [
         {
           role: "system",
-          content: `You are the Planner agent in a multi-agent AI coding system called Woxsom Code. 
-Your job is to:
-1. Analyze the user's request and decompose it into a clear project structure
-2. Select the optimal tech stack
-3. Define a development roadmap as Trello-style tasks
-4. Provide clear specifications for the Frontend and Backend executor agents
+          content: `${COT_INSTRUCTION}
+
+You are the Planner agent in a multi-agent AI coding system called Woxsom Code.
+Your ONLY task right now is to produce a structured project plan. Do not write any code.
+
+Step 1 — Analyze the request and identify key requirements.
+Step 2 — Choose the optimal tech stack.
+Step 3 — Break the project into tasks for Frontend and Backend executors.
+Step 4 — Output the plan in the JSON format below.
 
 Output a structured JSON plan with:
 - projectName: string
-- description: string  
+- description: string
 - techStack: { frontend: string[], backend: string[], database: string, deployment: string }
 - tasks: Array<{ id: string, title: string, type: "frontend"|"backend"|"both", priority: "high"|"medium"|"low", description: string }>
-- frontendSpec: string (detailed spec for the Frontend Executor)
-- backendSpec: string (detailed spec for the Backend Executor)
+- frontendSpec: string (detailed spec for the Frontend Executor — what screens, components, and interactions to build)
+- backendSpec: string (detailed spec for the Backend Executor — what endpoints, models, and logic to build)
 - fileStructure: string (expected project file tree)
 
-Be thorough and practical. The executors will follow your plan exactly.`,
+Be concise but complete. Executors will follow your plan exactly.`,
         },
         {
           role: "user",
           content: `Build this project: ${userPrompt}`,
         },
       ],
-      { maxTokens: 3000, temperature: 0.4 }
+      { maxTokens: 2000, temperature: 0.3 }
     );
 
     updateAgent(sessionId, "Planner", { status: "done" });
@@ -144,6 +160,9 @@ Be thorough and practical. The executors will follow your plan exactly.`,
     sessionDb.updateStatus(sessionId, "executing");
 
     // ─── GROUP B: PARALLEL EXECUTORS ─────────────────────────────────────────
+    console.log(`--- [${sessionId}] Starting Execution Stage (Frontend + Backend in parallel) ---`);
+    logger.info({ sessionId }, "Group B: Executors starting in parallel");
+
     updateAgent(sessionId, "Frontend Executor", {
       status: "active",
       model: frontendModel,
@@ -155,7 +174,7 @@ Be thorough and practical. The executors will follow your plan exactly.`,
       task: "Generating backend API and business logic",
     });
 
-    logger.info({ sessionId }, "Group B: Executors starting in parallel");
+    const planContext = truncate(plannerResult, 3000);
 
     const [frontendResult, backendResult] = await Promise.all([
       callGroq(
@@ -163,22 +182,28 @@ Be thorough and practical. The executors will follow your plan exactly.`,
         [
           {
             role: "system",
-            content: `You are the Frontend/UI Executor agent in Woxsom Code. You generate complete, production-ready frontend code.
-Output actual file contents in this format:
+            content: `${COT_INSTRUCTION}
 
+You are the Frontend Executor agent in Woxsom Code.
+Your ONLY task right now is to generate the frontend source files based on the plan below. Do not write backend code.
+
+Step 1 — Read the frontendSpec from the plan carefully.
+Step 2 — List the files you will create.
+Step 3 — Write each file completely.
+
+Output each file in this exact format:
 \`\`\`filepath:src/App.tsx
-// file content here
+// full file content here
 \`\`\`
 
-Generate complete, functional code. Include all necessary files: components, pages, styles, configuration.
-Focus on clean, modern UI with proper TypeScript types. Do not include placeholder comments — write real implementation.`,
+Write complete, working TypeScript/React code. No placeholders, no TODO comments.`,
           },
           {
             role: "user",
-            content: `Frontend spec from Planner:\n\n${plannerResult}\n\nOriginal request: ${userPrompt}\n\nGenerate all frontend files.`,
+            content: `Project plan:\n\n${planContext}\n\nOriginal request: ${userPrompt}\n\nGenerate all frontend files now.`,
           },
         ],
-        { maxTokens: 4096, temperature: 0.5 }
+        { maxTokens: 3500, temperature: 0.4 }
       ),
 
       callGroq(
@@ -186,22 +211,28 @@ Focus on clean, modern UI with proper TypeScript types. Do not include placehold
         [
           {
             role: "system",
-            content: `You are the Backend/AI Executor agent in Woxsom Code. You generate complete, production-ready backend code.
-Output actual file contents in this format:
+            content: `${COT_INSTRUCTION}
 
+You are the Backend Executor agent in Woxsom Code.
+Your ONLY task right now is to generate the backend source files based on the plan below. Do not write frontend code.
+
+Step 1 — Read the backendSpec from the plan carefully.
+Step 2 — List the files you will create.
+Step 3 — Write each file completely.
+
+Output each file in this exact format:
 \`\`\`filepath:server/index.ts
-// file content here
+// full file content here
 \`\`\`
 
-Generate complete, functional code. Include all necessary files: API routes, database schema, middleware, configuration.
-Focus on robust, secure implementation with proper error handling. Do not include placeholder comments — write real implementation.`,
+Write complete, working TypeScript code with proper error handling. No placeholders, no TODO comments.`,
           },
           {
             role: "user",
-            content: `Backend spec from Planner:\n\n${plannerResult}\n\nOriginal request: ${userPrompt}\n\nGenerate all backend files.`,
+            content: `Project plan:\n\n${planContext}\n\nOriginal request: ${userPrompt}\n\nGenerate all backend files now.`,
           },
         ],
-        { maxTokens: 4096, temperature: 0.5 }
+        { maxTokens: 3500, temperature: 0.4 }
       ),
     ]);
 
@@ -221,47 +252,50 @@ Focus on robust, secure implementation with proper error handling. Do not includ
       "Backend Executor"
     );
 
-    updatePipeline(sessionId, { progress: 65, currentStep: "Critics reviewing and optimizing" });
+    updatePipeline(sessionId, { progress: 65, currentStep: "Critic reviewing code quality" });
     sessionDb.updateStatus(sessionId, "reviewing");
 
-    // ─── GROUP C: CRITIC / OPTIMIZER ─────────────────────────────────────────
+    // ─── GROUP C — STEP 1: CRITIC ─────────────────────────────────────────────
+    console.log(`--- [${sessionId}] Starting Critic Stage ---`);
+    logger.info({ sessionId, model: reviewModel }, "Group C: Critic starting");
+
     updateAgent(sessionId, "Critic", {
       status: "active",
       model: reviewModel,
       task: "Reviewing code quality and correctness",
     });
-    updateAgent(sessionId, "Optimizer", {
-      status: "active",
-      model: securityModel,
-      task: "Security audit and performance optimization",
-    });
 
-    logger.info({ sessionId }, "Group C: Critic starting");
+    const frontendContext = truncate(frontendResult, 2500);
+    const backendContext = truncate(backendResult, 2500);
 
     const criticResult = await callGroq(
       reviewModel,
       [
         {
           role: "system",
-          content: `You are the Critic agent in Woxsom Code. You review generated code for:
-1. Bugs and logical errors
-2. Missing functionality from the spec
-3. Code quality and best practices
-4. Type safety and proper error handling
+          content: `${COT_INSTRUCTION}
 
-Provide:
-- A summary of issues found
-- Corrected/improved file contents in the \`\`\`filepath:...\`\`\` format for any files that need changes
-- A final quality score (0-100)
+You are the Critic agent in Woxsom Code.
+Your ONLY task right now is to review the generated code for bugs and missing functionality.
 
-If code is good, still output the final merged file structure with all corrections applied.`,
+Step 1 — Check the frontend code for bugs, missing types, and UI issues.
+Step 2 — Check the backend code for bugs, missing routes, and security issues.
+Step 3 — List all issues found with severity (critical / warning / suggestion).
+Step 4 — Output corrected files for any critical issues only.
+
+Use this format for corrected files:
+\`\`\`filepath:src/fixed-file.tsx
+// corrected content
+\`\`\`
+
+End your response with: **Quality Score: N/100** where N reflects the overall quality.`,
         },
         {
           role: "user",
-          content: `Review this generated project:\n\nPLAN:\n${plannerResult}\n\nFRONTEND CODE:\n${frontendResult}\n\nBACKEND CODE:\n${backendResult}\n\nOriginal request: ${userPrompt}`,
+          content: `FRONTEND CODE:\n${frontendContext}\n\n---\n\nBACKEND CODE:\n${backendContext}\n\n---\n\nOriginal request: ${userPrompt}\n\nReview the code now.`,
         },
       ],
-      { maxTokens: 4096, temperature: 0.3 }
+      { maxTokens: 2500, temperature: 0.2 }
     );
 
     updateAgent(sessionId, "Critic", { status: "done" });
@@ -272,33 +306,56 @@ If code is good, still output the final merged file structure with all correctio
       "Critic"
     );
 
-    logger.info({ sessionId }, "Group C: Optimizer starting");
+    updatePipeline(sessionId, { progress: 82, currentStep: "Optimizer finalizing project" });
+
+    // ─── GROUP C — STEP 2: OPTIMIZER ─────────────────────────────────────────
+    console.log(`--- [${sessionId}] Starting Optimizer Stage ---`);
+    logger.info({ sessionId, model: securityModel }, "Group C: Optimizer starting");
+
+    updateAgent(sessionId, "Optimizer", {
+      status: "active",
+      model: securityModel,
+      task: "Adding config files and packaging project",
+    });
+
+    const criticContext = truncate(criticResult, 1500);
 
     const optimizerResult = await callGroq(
       securityModel,
       [
         {
           role: "system",
-          content: `You are the Optimizer/Security agent in Woxsom Code. You:
-1. Check for security vulnerabilities (XSS, injection, auth issues)
-2. Optimize performance bottlenecks
-3. Add missing configuration files (.gitignore, package.json, tsconfig.json, README.md, .env.example, .vscode/settings.json)
-4. Package the final project with VS Code integration
+          content: `${COT_INSTRUCTION}
 
-Output the final complete file set including ALL configuration files needed to run the project.
-Use the format: \`\`\`filepath:filename\`\`\` for each file.
-Always include: package.json, tsconfig.json, .gitignore, README.md, .env.example, .vscode/settings.json`,
+You are the Optimizer agent in Woxsom Code.
+Your ONLY task right now is to add the missing configuration files that make the project runnable.
+
+Step 1 — Review the critic's issues summary.
+Step 2 — Generate ONLY the configuration and setup files listed below.
+Step 3 — Do not rewrite application code already generated by the executors.
+
+You MUST generate these files (if not already present in the executor output):
+- package.json (with all correct dependencies)
+- tsconfig.json
+- .gitignore
+- README.md (with setup and run instructions)
+- .env.example
+- .vscode/settings.json
+
+Use this format:
+\`\`\`filepath:package.json
+{ ... }
+\`\`\``,
         },
         {
           role: "user",
-          content: `Optimize and finalize this project:\n\nPLAN:\n${plannerResult}\n\nFRONTEND:\n${frontendResult}\n\nBACKEND:\n${backendResult}\n\nCRITIC REVIEW:\n${criticResult}`,
+          content: `Critic review summary:\n${criticContext}\n\n---\n\nProject: ${userPrompt}\n\nGenerate the configuration files now.`,
         },
       ],
-      { maxTokens: 4096, temperature: 0.3 }
+      { maxTokens: 2000, temperature: 0.2 }
     );
 
     updateAgent(sessionId, "Optimizer", { status: "done" });
-
     addSystemMessage(
       sessionId,
       `**Optimizer Output — Project Finalized**\n\n${optimizerResult}`,
@@ -309,6 +366,7 @@ Always include: package.json, tsconfig.json, .gitignore, README.md, .env.example
     updatePipeline(sessionId, { progress: 90, currentStep: "Packaging project files" });
 
     // ─── EXTRACT & SAVE PROJECT FILES ────────────────────────────────────────
+    console.log(`--- [${sessionId}] Extracting and saving project files ---`);
     const allCode = `${frontendResult}\n\n${backendResult}\n\n${criticResult}\n\n${optimizerResult}`;
     const files = extractProjectFiles(allCode);
 
@@ -318,7 +376,7 @@ Always include: package.json, tsconfig.json, .gitignore, README.md, .env.example
       projectDb.saveFiles(sessionId, [
         {
           filePath: "README.md",
-          content: `# Generated Project\n\n${plannerResult}\n\n## Files\n\nSee the full output in the chat above for all generated code.\n`,
+          content: `# Generated Project\n\n${truncate(plannerResult, 2000)}\n\n## Files\n\nSee the full output in the chat above for all generated code.\n`,
         },
       ]);
     }
@@ -333,11 +391,14 @@ Always include: package.json, tsconfig.json, .gitignore, README.md, .env.example
     });
     sessionDb.updateStatus(sessionId, "done");
 
+    console.log(`--- [${sessionId}] Pipeline completed successfully — ${files.length} files ---`);
     logger.info({ sessionId, fileCount: files.length }, "Pipeline completed successfully");
+
   } catch (err) {
     const error = err as Error;
     const isAuthError = err instanceof GroqAuthError;
     logger.error({ sessionId, error: error.message, isAuthError }, "Pipeline error");
+    console.error(`--- [${sessionId}] Pipeline error: ${error.message} ---`);
 
     pipelines.get(sessionId)?.agents.forEach((a) => {
       if (a.status === "active") {
@@ -348,13 +409,13 @@ Always include: package.json, tsconfig.json, .gitignore, README.md, .env.example
     if (isAuthError) {
       updatePipeline(sessionId, {
         status: "needs_keys",
-        currentStep: "API key rejected — please update keys in Settings",
+        currentStep: "API key rejected — please update keys in API Keys page",
         progress: 0,
       });
       sessionDb.updateStatus(sessionId, "needs_keys");
       addSystemMessage(
         sessionId,
-        `**Authentication Error**\n\n${error.message}\n\nYour Groq API key was rejected. Go to **Settings**, delete the current key and add a valid one, then start a new session.`,
+        `**Authentication Error**\n\n${error.message}\n\nYour Groq API key was rejected. Go to **API Keys** in the sidebar, delete the current key and add a valid one, then start a new session.`,
         "system",
         "System"
       );
@@ -367,7 +428,7 @@ Always include: package.json, tsconfig.json, .gitignore, README.md, .env.example
       sessionDb.updateStatus(sessionId, "error");
       addSystemMessage(
         sessionId,
-        `**Pipeline Error**\n\n${error.message}\n\nPlease check your API keys in Settings and try again.`,
+        `**Pipeline Error**\n\n${error.message}\n\nPlease check your API keys and try again.`,
         "system",
         "System"
       );
@@ -386,7 +447,7 @@ function extractProjectFiles(text: string): ProjectFile[] {
     const rawPath = match[1].trim();
     const content = match[2];
 
-    if (!rawPath || rawPath.includes(" ") && !rawPath.includes("/")) continue;
+    if (!rawPath || (rawPath.includes(" ") && !rawPath.includes("/"))) continue;
 
     const cleanPath = rawPath
       .replace(/^(filepath:|path:)/, "")
