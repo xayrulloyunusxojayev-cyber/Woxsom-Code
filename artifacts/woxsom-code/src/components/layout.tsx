@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
-import { LayoutDashboard, MessageSquare, Settings, Plus, Terminal, Trash2 } from "lucide-react";
+import { LayoutDashboard, MessageSquare, Settings, Plus, Terminal, Trash2, Key } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 
 interface AppLayoutProps {
@@ -79,11 +79,7 @@ export function AppLayout({ children }: AppLayoutProps) {
                       variant="ghost"
                       size="icon"
                       className="absolute right-1 top-1/2 -translate-y-1/2 w-6 h-6 opacity-0 group-hover:opacity-100 hover:bg-destructive/10 hover:text-destructive text-muted-foreground transition-opacity"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        // handle delete (mutation hook not imported here though, let's just make it call a prop or do it inline)
-                      }}
+                      onClick={(e) => handleDeleteSession(e, session.id)}
                     >
                       <Trash2 className="w-3 h-3" />
                     </Button>
@@ -107,6 +103,12 @@ export function AppLayout({ children }: AppLayoutProps) {
             <div className={`flex items-center gap-2 px-2 py-2 text-sm rounded-md cursor-pointer transition-colors ${location === '/models' ? 'bg-sidebar-accent text-sidebar-accent-foreground font-medium' : 'text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground'}`}>
               <LayoutDashboard className="w-4 h-4" />
               Models
+            </div>
+          </Link>
+          <Link href="/keys" className="block">
+            <div className={`flex items-center gap-2 px-2 py-2 text-sm rounded-md cursor-pointer transition-colors ${location === '/keys' ? 'bg-sidebar-accent text-sidebar-accent-foreground font-medium' : 'text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground'}`}>
+              <Key className="w-4 h-4" />
+              API Keys
             </div>
           </Link>
           <Link href="/settings" className="block">

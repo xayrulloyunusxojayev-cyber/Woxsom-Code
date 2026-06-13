@@ -28,7 +28,7 @@ export const GROUP_A_MODEL = "llama-3.3-70b-versatile";
 export const GROUP_B_FRONTEND_MODEL = "llama-3.1-8b-instant";
 export const GROUP_B_BACKEND_MODEL = "qwen/qwen3-32b";
 export const GROUP_C_CRITIC_1_MODEL = "llama-3.3-70b-versatile";
-export const GROUP_C_CRITIC_2_MODEL = "openai/gpt-oss-20b";
+export const GROUP_C_CRITIC_2_MODEL = "llama-3.3-70b-versatile";
 
 export function selectModelForTask(task: "planning" | "frontend" | "backend" | "review" | "security"): string {
   switch (task) {

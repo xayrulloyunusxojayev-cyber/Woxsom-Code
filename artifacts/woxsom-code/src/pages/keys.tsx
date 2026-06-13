@@ -20,13 +20,12 @@ import {
   Save,
   ShieldCheck,
   AlertTriangle,
-  Database,
   Eye,
   EyeOff,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
-export default function SettingsPage() {
+export default function KeysPage() {
   const { data: status, isLoading, refetch } = useGetApiKeyStatus();
   const setApiKeys = useSetApiKeys();
   const { toast } = useToast();
@@ -75,10 +74,15 @@ export default function SettingsPage() {
 
   return (
     <AppLayout>
-      <div className="p-8 max-w-4xl mx-auto w-full h-full overflow-y-auto space-y-8">
+      <div className="p-8 max-w-2xl mx-auto w-full h-full overflow-y-auto space-y-8">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight mb-2">System Configuration</h1>
-          <p className="text-muted-foreground">Manage core terminal settings and API access.</p>
+          <h1 className="text-3xl font-bold tracking-tight mb-2">API Keys</h1>
+          <p className="text-muted-foreground">
+            Add your Groq API keys to power the agent pipeline. Get free keys at{" "}
+            <a href="https://console.groq.com/keys" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
+              console.groq.com/keys
+            </a>.
+          </p>
         </div>
 
         <Card className="glass-panel border-border/50">
@@ -90,10 +94,10 @@ export default function SettingsPage() {
                   Groq API Keys
                 </CardTitle>
                 <CardDescription className="mt-1.5">
-                  Provide up to 5 keys for parallel multi-agent execution. Keys are stored in the app's own database — no environment variables required.
+                  Add up to 5 keys for parallel multi-agent execution. Keys rotate round-robin to bypass rate limits.
                 </CardDescription>
               </div>
-              {isLoading ? null : (
+              {!isLoading && (
                 <Badge
                   variant={isConfigured ? "default" : "destructive"}
                   className={`shrink-0 gap-1.5 ${isConfigured ? "bg-green-500/15 text-green-400 border-green-500/30 hover:bg-green-500/20" : ""}`}
@@ -101,7 +105,7 @@ export default function SettingsPage() {
                   {isConfigured ? (
                     <><ShieldCheck className="w-3 h-3" /> {status?.keyCount} key{(status?.keyCount ?? 0) !== 1 ? "s" : ""} active</>
                   ) : (
-                    <><AlertTriangle className="w-3 h-3" /> No keys configured</>
+                    <><AlertTriangle className="w-3 h-3" /> No keys</>
                   )}
                 </Badge>
               )}
@@ -116,36 +120,18 @@ export default function SettingsPage() {
               </div>
             ) : (
               <div className="space-y-5">
-                {/* Storage info banner */}
-                <div className="flex items-start gap-3 rounded-lg border border-primary/20 bg-primary/5 p-4">
-                  <Database className="w-5 h-5 text-primary mt-0.5 shrink-0" />
-                  <div className="space-y-1">
-                    <p className="text-sm font-medium text-foreground">
-                      Database storage
-                    </p>
-                    <p className="text-sm text-muted-foreground">
-                      Keys are stored in the app's built-in SQLite database and persist across restarts and redeploys with no environment variables required.
-                    </p>
-                  </div>
-                </div>
-
-                {/* Missing key warning */}
                 {!isConfigured && (
                   <div className="flex items-start gap-3 rounded-lg border border-destructive/20 bg-destructive/5 p-4">
                     <AlertTriangle className="w-5 h-5 text-destructive mt-0.5 shrink-0" />
                     <div>
                       <p className="text-sm font-medium text-foreground">No API keys configured</p>
                       <p className="text-sm text-muted-foreground mt-0.5">
-                        The agent pipeline cannot run without at least one Groq API key. Get your free keys at{" "}
-                        <a href="https://console.groq.com/keys" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
-                          console.groq.com/keys
-                        </a>.
+                        The agent pipeline cannot run without at least one Groq API key.
                       </p>
                     </div>
                   </div>
                 )}
 
-                {/* Existing active keys (masked) */}
                 {isConfigured && status?.maskedKeys && status.maskedKeys.length > 0 && (
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
@@ -174,12 +160,11 @@ export default function SettingsPage() {
                   </div>
                 )}
 
-                {/* Key entry form */}
                 <div className="space-y-2">
                   <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">
                     {isConfigured ? "Replace keys" : "Add keys"}
                   </p>
-                  <form id="settings-form" onSubmit={handleSubmit} className="space-y-3 max-w-xl">
+                  <form id="keys-form" onSubmit={handleSubmit} className="space-y-3">
                     {keys.map((key, index) => (
                       <div key={index} className="flex gap-2 items-center">
                         <div className="relative flex-1">
@@ -212,14 +197,14 @@ export default function SettingsPage() {
                         variant="outline"
                         size="sm"
                         onClick={handleAddKey}
-                        className="w-full border-dashed text-muted-foreground hover:text-foreground max-w-xl"
+                        className="w-full border-dashed text-muted-foreground hover:text-foreground"
                       >
-                        <Plus className="w-4 h-4 mr-2" /> Add Key Slot ({keys.length}/5)
+                        <Plus className="w-4 h-4 mr-2" /> Add Another Key ({keys.length}/5)
                       </Button>
                     )}
                   </form>
-                  <p className="text-xs text-muted-foreground max-w-xl">
-                    Saving new keys will replace any previously stored keys. Keys are used in round-robin rotation to bypass rate limits.
+                  <p className="text-xs text-muted-foreground">
+                    Saving new keys replaces any previously stored keys.
                   </p>
                 </div>
               </div>
@@ -230,7 +215,7 @@ export default function SettingsPage() {
             <CardFooter className="border-t border-border/10 pt-6">
               <Button
                 type="submit"
-                form="settings-form"
+                form="keys-form"
                 className="gap-2"
                 disabled={setApiKeys.isPending}
               >
