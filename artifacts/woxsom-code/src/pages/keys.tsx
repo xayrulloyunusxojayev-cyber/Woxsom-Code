@@ -162,7 +162,7 @@ export default function KeysPage() {
 
                 <div className="space-y-2">
                   <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">
-                    {isConfigured ? "Replace keys" : "Add keys"}
+                    Add keys
                   </p>
                   <form id="keys-form" onSubmit={handleSubmit} className="space-y-3">
                     {keys.map((key, index) => (
@@ -204,7 +204,7 @@ export default function KeysPage() {
                     )}
                   </form>
                   <p className="text-xs text-muted-foreground">
-                    Saving new keys replaces any previously stored keys.
+                    New keys are added to existing ones (max 5 total). To remove a key, delete all keys and re-add the ones you want to keep.
                   </p>
                 </div>
               </div>

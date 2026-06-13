@@ -31,17 +31,20 @@ router.post("/keys", (req, res): void => {
     return;
   }
 
-  secretsDb.saveKeys(validKeys);
-  setGroqKeys(validKeys);
+  const existing = secretsDb.getKeys();
+  const merged = Array.from(new Set([...existing, ...validKeys])).slice(0, 5);
 
-  req.log.info({ keyCount: validKeys.length }, "API keys saved to EncryptedSecrets and loaded into pool");
+  secretsDb.saveKeys(merged);
+  setGroqKeys(merged);
+
+  req.log.info({ keyCount: merged.length }, "API keys merged and saved to EncryptedSecrets");
 
   res.json({
     configured: true,
-    keyCount: validKeys.length,
+    keyCount: merged.length,
     source: "stored" as const,
     readonly: false,
-    maskedKeys: validKeys.map((k) => k.slice(0, 8) + "..." + k.slice(-4)),
+    maskedKeys: merged.map((k) => k.slice(0, 8) + "..." + k.slice(-4)),
   });
 });
 

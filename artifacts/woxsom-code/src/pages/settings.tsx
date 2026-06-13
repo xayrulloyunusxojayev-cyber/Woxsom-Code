@@ -177,7 +177,7 @@ export default function SettingsPage() {
                 {/* Key entry form */}
                 <div className="space-y-2">
                   <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">
-                    {isConfigured ? "Replace keys" : "Add keys"}
+                    Add keys
                   </p>
                   <form id="settings-form" onSubmit={handleSubmit} className="space-y-3 max-w-xl">
                     {keys.map((key, index) => (
@@ -219,7 +219,7 @@ export default function SettingsPage() {
                     )}
                   </form>
                   <p className="text-xs text-muted-foreground max-w-xl">
-                    Saving new keys will replace any previously stored keys. Keys are used in round-robin rotation to bypass rate limits.
+                    New keys are added to existing ones (max 5 total). Keys are used in round-robin rotation to bypass rate limits.
                   </p>
                 </div>
               </div>
