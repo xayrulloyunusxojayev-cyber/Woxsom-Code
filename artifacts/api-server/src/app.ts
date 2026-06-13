@@ -51,20 +51,33 @@ const frontendExists = fs.existsSync(frontendDist);
 if (frontendExists) {
   app.use(express.static(frontendDist));
 
-  // ИСПРАВЛЕННЫЙ SPA fallback: используем регулярное выражение для обхода ограничений path-to-regexp v8
-  app.get("/(.*)", (req: Request, res: Response, next: NextFunction) => {
-    // Если запрос начинается с /api, пропускаем его (уже обработан выше)
-    if (req.path.startsWith("/api")) return next();
+  // --- Frontend static files & SPA fallback ---
+const frontendDist = path.resolve(__dirname, "../../woxsom-code/dist");
+const frontendExists = fs.existsSync(frontendDist);
+
+if (frontendExists) {
+  app.use(express.static(frontendDist));
+
+  // ИСПОЛЬЗУЕМ ЭТОТ МЕТОД: он работает в Express 5 без вызова path-to-regexp для каждой строки
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    // Пропускаем все API запросы
+    if (req.path.startsWith("/api")) {
+      return next();
+    }
     
+    // Проверяем, запрашивается ли статический файл (содержит точку)
+    if (req.path.includes(".")) {
+      return next();
+    }
+
+    // Отправляем index.html для всех остальных путей
     res.sendFile(path.join(frontendDist, "index.html"), (err) => {
       if (err) next(err);
     });
   });
 } else {
-  // Заглушка, если фронтенд еще не собран
   app.get("/", (_req, res) => {
     res.json({ status: "API Server running (frontend not found)" });
   });
 }
-
 export default app;
