@@ -16,4 +16,5 @@ export const PipelineStatusStatus = {
   reviewing: 'reviewing',
   done: 'done',
   error: 'error',
+  needs_keys: 'needs_keys',
 } as const;

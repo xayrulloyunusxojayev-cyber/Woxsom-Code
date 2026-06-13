@@ -18,9 +18,25 @@ export interface ApiKeyInput {
   keys: string[];
 }
 
+/**
+ * env = loaded from environment variables; stored = saved in JSON file; none = no keys configured
+ */
+export type ApiKeyStatusSource = typeof ApiKeyStatusSource[keyof typeof ApiKeyStatusSource];
+
+
+export const ApiKeyStatusSource = {
+  env: 'env',
+  stored: 'stored',
+  none: 'none',
+} as const;
+
 export interface ApiKeyStatus {
   configured: boolean;
   keyCount: number;
+  /** env = loaded from environment variables; stored = saved in JSON file; none = no keys configured */
+  source: ApiKeyStatusSource;
+  /** true when keys come from environment variables and cannot be changed via UI */
+  readonly: boolean;
   maskedKeys?: string[];
 }
 
@@ -34,6 +50,7 @@ export const SessionStatus = {
   reviewing: 'reviewing',
   done: 'done',
   error: 'error',
+  needs_keys: 'needs_keys',
 } as const;
 
 export interface Session {
@@ -60,6 +77,7 @@ export const SessionDetailStatus = {
   reviewing: 'reviewing',
   done: 'done',
   error: 'error',
+  needs_keys: 'needs_keys',
 } as const;
 
 export type MessageRole = typeof MessageRole[keyof typeof MessageRole];
@@ -112,6 +130,7 @@ export const PipelineStatusStatus = {
   reviewing: 'reviewing',
   done: 'done',
   error: 'error',
+  needs_keys: 'needs_keys',
 } as const;
 
 export type AgentStatusGroup = typeof AgentStatusGroup[keyof typeof AgentStatusGroup];

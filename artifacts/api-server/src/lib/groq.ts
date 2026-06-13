@@ -19,17 +19,53 @@ export interface GroqResponse {
   };
 }
 
+/** Thrown when Groq rejects the API key (401/403). Distinct from other API errors. */
+export class GroqAuthError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "GroqAuthError";
+  }
+}
+
 let keyPool: string[] = [];
 let keyIndex = 0;
+let keySource: "env" | "stored" | "none" = "none";
 
+/**
+ * Read GROQ_KEY_1 … GROQ_KEY_5 from process.env.
+ * Call this first at startup; if keys are found they become the active pool
+ * and the JSON store is ignored. Returns the count of env-provided keys.
+ */
+export function loadEnvKeys(): number {
+  const envKeys: string[] = [];
+  for (let i = 1; i <= 5; i++) {
+    const k = process.env[`GROQ_KEY_${i}`];
+    if (k && k.trim().length > 0) envKeys.push(k.trim());
+  }
+  if (envKeys.length > 0) {
+    keyPool = envKeys;
+    keySource = "env";
+    keyIndex = 0;
+    logger.info({ count: envKeys.length }, "Loaded Groq API keys from environment variables");
+  }
+  return envKeys.length;
+}
+
+/** Load keys saved in the JSON file store (used when no env keys are present). */
 export function setGroqKeys(keys: string[]): void {
   keyPool = keys.filter((k) => k && k.trim().length > 0);
   keyIndex = 0;
-  logger.info({ count: keyPool.length }, "Groq API keys configured");
+  keySource = keyPool.length > 0 ? "stored" : "none";
+  logger.info({ count: keyPool.length }, "Groq API keys configured from store");
 }
 
 export function getGroqKeys(): string[] {
   return keyPool;
+}
+
+/** Returns where the active key pool came from: env vars, JSON store, or nothing. */
+export function getKeySource(): "env" | "stored" | "none" {
+  return keySource;
 }
 
 function nextKey(): string | null {
@@ -46,7 +82,9 @@ export async function callGroq(
 ): Promise<string> {
   const apiKey = nextKey();
   if (!apiKey) {
-    throw new Error("No Groq API keys configured. Please add API keys in Settings.");
+    throw new GroqAuthError(
+      "No Groq API keys configured. Please add API keys in Settings."
+    );
   }
 
   const { maxTokens = 4096, temperature = 0.7 } = options;
@@ -66,6 +104,15 @@ export async function callGroq(
       temperature,
     }),
   });
+
+  // 401/403 = bad key — use typed error so the pipeline can handle it distinctly
+  if (response.status === 401 || response.status === 403) {
+    const errorText = await response.text().catch(() => "");
+    logger.error({ status: response.status, model, error: errorText }, "Groq auth rejected");
+    throw new GroqAuthError(
+      `Groq rejected the API key (HTTP ${response.status}). Please update your keys in Settings.`
+    );
+  }
 
   if (!response.ok) {
     const errorText = await response.text();

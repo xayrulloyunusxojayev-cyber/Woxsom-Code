@@ -5,9 +5,14 @@
  * Woxsom Code API - Multi-agent AI coding assistant
  * OpenAPI spec version: 0.1.0
  */
+import type { ApiKeyStatusSource } from './apiKeyStatusSource';
 
 export interface ApiKeyStatus {
   configured: boolean;
   keyCount: number;
+  /** env = loaded from environment variables; stored = saved in JSON file; none = no keys configured */
+  source: ApiKeyStatusSource;
+  /** true when keys come from environment variables and cannot be changed via UI */
+  readonly: boolean;
   maskedKeys?: string[];
 }

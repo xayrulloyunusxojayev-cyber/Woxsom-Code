@@ -1,7 +1,8 @@
 import { AgentStatus, PipelineStatus } from "@workspace/api-client-react";
 import { Card } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
-import { CheckCircle2, Circle, Loader2, XCircle } from "lucide-react";
+import { CheckCircle2, Circle, Loader2, XCircle, KeyRound } from "lucide-react";
+import { Link } from "wouter";
 
 interface PipelinePanelProps {
   status: PipelineStatus | null;
@@ -9,6 +10,8 @@ interface PipelinePanelProps {
 
 export function PipelinePanel({ status }: PipelinePanelProps) {
   if (!status || status.status === 'idle') return null;
+
+  const isNeedsKeys = status.status === 'needs_keys';
 
   const groups = [
     { id: 'A', name: 'Planning', agents: status.agents.filter(a => a.group === 'A') },
@@ -23,13 +26,19 @@ export function PipelinePanel({ status }: PipelinePanelProps) {
       <div className="flex flex-col gap-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className={`w-2 h-2 rounded-full ${status.status === 'error' ? 'bg-destructive' : status.status === 'done' ? 'bg-green-500' : 'bg-primary animate-pulse'}`} />
+            <div className={`w-2 h-2 rounded-full ${status.status === 'error' ? 'bg-destructive' : isNeedsKeys ? 'bg-amber-500' : status.status === 'done' ? 'bg-green-500' : 'bg-primary animate-pulse'}`} />
             <h4 className="text-sm font-semibold tracking-wide uppercase text-foreground/90">Agent Pipeline</h4>
           </div>
-          <span className="text-xs font-mono text-muted-foreground">{status.currentStep || 'Initializing...'}</span>
+          {isNeedsKeys ? (
+            <Link href="/settings" className="flex items-center gap-1 text-xs text-amber-400 hover:text-amber-300 font-medium transition-colors">
+              <KeyRound className="w-3 h-3" /> Update API Keys →
+            </Link>
+          ) : (
+            <span className="text-xs font-mono text-muted-foreground">{status.currentStep || 'Initializing...'}</span>
+          )}
         </div>
 
-        <Progress value={status.progress || 0} className="h-1 bg-secondary" indicatorClassName={`${status.status === 'error' ? 'bg-destructive' : status.status === 'done' ? 'bg-green-500' : 'bg-primary'}`} />
+        <Progress value={status.progress || 0} className="h-1 bg-secondary" indicatorClassName={`${status.status === 'error' ? 'bg-destructive' : isNeedsKeys ? 'bg-amber-500' : status.status === 'done' ? 'bg-green-500' : 'bg-primary'}`} />
 
         <div className="grid grid-cols-3 gap-4 mt-2">
           {groups.map(group => (

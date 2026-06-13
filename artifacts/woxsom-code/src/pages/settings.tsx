@@ -1,24 +1,39 @@
 import { AppLayout } from "@/components/layout";
 import { useGetApiKeyStatus, useSetApiKeys } from "@workspace/api-client-react";
-import { useState, useEffect } from "react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
+import { useState } from "react";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  CardFooter,
+} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Key, Plus, Trash2, Loader2, Save } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import {
+  Key,
+  Plus,
+  Trash2,
+  Loader2,
+  Save,
+  ShieldCheck,
+  AlertTriangle,
+  ExternalLink,
+  Lock,
+} from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 export default function SettingsPage() {
-  const { data: status, isLoading } = useGetApiKeyStatus();
+  const { data: status, isLoading, refetch } = useGetApiKeyStatus();
   const setApiKeys = useSetApiKeys();
   const { toast } = useToast();
-  
+
   const [keys, setKeys] = useState<string[]>([""]);
 
-  useEffect(() => {
-    if (status?.configured && status.maskedKeys) {
-      setKeys(status.maskedKeys.length > 0 ? status.maskedKeys : [""]);
-    }
-  }, [status]);
+  const isEnv = status?.source === "env";
+  const isConfigured = status?.configured ?? false;
 
   const handleAddKey = () => {
     if (keys.length < 5) setKeys([...keys, ""]);
@@ -29,28 +44,31 @@ export default function SettingsPage() {
   };
 
   const handleKeyChange = (index: number, value: string) => {
-    const newKeys = [...keys];
-    newKeys[index] = value;
-    setKeys(newKeys);
+    const updated = [...keys];
+    updated[index] = value;
+    setKeys(updated);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const validKeys = keys.filter(k => k.trim().length > 0 && !k.includes("...")); // ignore masked keys on submit if they haven't changed
-    
-    // If they only have masked keys and hit save, do nothing or send as is? 
-    // API expects full keys. If they submit masked keys, backend might fail or ignore.
-    // For this UI, if they change a key, they replace the masked string.
-    const keysToSubmit = keys.filter(k => k.trim() !== "");
-    
-    setApiKeys.mutate({ data: { keys: keysToSubmit } }, {
-      onSuccess: () => {
-        toast({ title: "Settings Saved", description: "API keys updated successfully." });
-      },
-      onError: () => {
-        toast({ title: "Error", description: "Failed to save API keys", variant: "destructive" });
+    const validKeys = keys.filter((k) => k.trim().length > 0);
+    if (validKeys.length === 0) {
+      toast({ title: "No keys entered", description: "Please enter at least one API key.", variant: "destructive" });
+      return;
+    }
+    setApiKeys.mutate(
+      { data: { keys: validKeys } },
+      {
+        onSuccess: () => {
+          toast({ title: "Keys Saved", description: `${validKeys.length} key(s) saved and active.` });
+          void refetch();
+        },
+        onError: (err) => {
+          const msg = (err as { message?: string })?.message ?? "Failed to save API keys";
+          toast({ title: "Error", description: msg, variant: "destructive" });
+        },
       }
-    });
+    );
   };
 
   return (
@@ -63,52 +81,169 @@ export default function SettingsPage() {
 
         <Card className="glass-panel border-border/50">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Key className="w-5 h-5 text-primary" />
-              Groq API Keys
-            </CardTitle>
-            <CardDescription>
-              Provide up to 5 keys to enable parallel agent execution. The pipeline uses these to bypass rate limits.
-            </CardDescription>
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <Key className="w-5 h-5 text-primary" />
+                  Groq API Keys
+                </CardTitle>
+                <CardDescription className="mt-1.5">
+                  Provide up to 5 keys for parallel multi-agent execution. Keys are used in round-robin rotation to bypass rate limits.
+                </CardDescription>
+              </div>
+              {isLoading ? null : (
+                <Badge
+                  variant={isConfigured ? "default" : "destructive"}
+                  className={`shrink-0 gap-1.5 ${isConfigured ? "bg-green-500/15 text-green-400 border-green-500/30 hover:bg-green-500/20" : ""}`}
+                >
+                  {isConfigured ? (
+                    <><ShieldCheck className="w-3 h-3" /> {status?.keyCount} key{(status?.keyCount ?? 0) !== 1 ? "s" : ""} active</>
+                  ) : (
+                    <><AlertTriangle className="w-3 h-3" /> No keys configured</>
+                  )}
+                </Badge>
+              )}
+            </div>
           </CardHeader>
+
           <CardContent>
             {isLoading ? (
-              <Loader2 className="w-6 h-6 animate-spin text-primary" />
-            ) : (
-              <form id="settings-form" onSubmit={handleSubmit} className="space-y-4 max-w-xl">
-                {keys.map((key, index) => (
-                  <div key={index} className="flex gap-2 items-center">
-                    <div className="relative flex-1">
-                      <Key className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                      <Input
-                        type="text"
-                        placeholder={`Enter key...`}
-                        className="pl-9 bg-background/50 font-mono text-sm focus-visible:ring-primary/50"
-                        value={key}
-                        onChange={(e) => handleKeyChange(index, e.target.value)}
-                      />
-                    </div>
-                    {keys.length > 1 && (
-                      <Button type="button" variant="ghost" size="icon" onClick={() => handleRemoveKey(index)} className="text-muted-foreground hover:text-destructive shrink-0">
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                    )}
+              <div className="flex items-center gap-2 text-muted-foreground py-4">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span className="text-sm">Checking key status…</span>
+              </div>
+            ) : isEnv ? (
+              /* ── ENV VAR MODE: read-only explanation ── */
+              <div className="space-y-4">
+                <div className="flex items-start gap-3 rounded-lg border border-primary/20 bg-primary/5 p-4">
+                  <Lock className="w-5 h-5 text-primary mt-0.5 shrink-0" />
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium text-foreground">
+                      Keys loaded from environment variables
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      {status?.keyCount} key{(status?.keyCount ?? 0) !== 1 ? "s are" : " is"} active via <code className="text-primary text-xs">GROQ_KEY_1</code> … <code className="text-primary text-xs">GROQ_KEY_{status?.keyCount}</code>. These persist across redeploys and cannot be changed from this UI.
+                    </p>
                   </div>
-                ))}
-                {keys.length < 5 && (
-                  <Button type="button" variant="outline" size="sm" onClick={handleAddKey} className="w-full border-dashed text-muted-foreground hover:text-foreground">
-                    <Plus className="w-4 h-4 mr-2" /> Add Key Slot
-                  </Button>
+                </div>
+
+                <div className="rounded-lg border border-border/40 bg-background/40 p-4 space-y-3">
+                  <p className="text-sm font-medium text-muted-foreground uppercase tracking-wider text-xs">
+                    To update keys on Render
+                  </p>
+                  <ol className="text-sm text-muted-foreground space-y-2 list-none">
+                    <li className="flex gap-2"><span className="text-primary font-mono text-xs mt-0.5">1.</span>Open your Render dashboard → your service → <strong>Environment</strong> tab</li>
+                    <li className="flex gap-2"><span className="text-primary font-mono text-xs mt-0.5">2.</span>Set <code className="text-xs bg-background/60 px-1 rounded">GROQ_KEY_1</code> through <code className="text-xs bg-background/60 px-1 rounded">GROQ_KEY_5</code> (use as many as you have)</li>
+                    <li className="flex gap-2"><span className="text-primary font-mono text-xs mt-0.5">3.</span>Save — Render will redeploy automatically and pick up the new keys</li>
+                  </ol>
+                  <a
+                    href="https://dashboard.render.com"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 text-xs text-primary hover:underline"
+                  >
+                    Open Render Dashboard <ExternalLink className="w-3 h-3" />
+                  </a>
+                </div>
+
+                {/* Masked preview */}
+                {status?.maskedKeys && status.maskedKeys.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Active keys (masked)</p>
+                    <div className="space-y-1.5">
+                      {status.maskedKeys.map((mk, i) => (
+                        <div key={i} className="flex items-center gap-2 rounded-md border border-border/30 bg-background/30 px-3 py-2">
+                          <Key className="w-3.5 h-3.5 text-muted-foreground/60 shrink-0" />
+                          <code className="text-xs text-muted-foreground font-mono">{mk}</code>
+                          <Lock className="w-3 h-3 text-muted-foreground/40 ml-auto shrink-0" />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 )}
-              </form>
+              </div>
+            ) : (
+              /* ── STORED / NONE MODE: editable form ── */
+              <div className="space-y-4">
+                {!isConfigured && (
+                  <div className="flex items-start gap-3 rounded-lg border border-destructive/20 bg-destructive/5 p-4">
+                    <AlertTriangle className="w-5 h-5 text-destructive mt-0.5 shrink-0" />
+                    <div>
+                      <p className="text-sm font-medium text-foreground">No API keys configured</p>
+                      <p className="text-sm text-muted-foreground mt-0.5">
+                        The agent pipeline cannot run without at least one Groq API key. Get your free keys at{" "}
+                        <a href="https://console.groq.com/keys" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
+                          console.groq.com/keys
+                        </a>.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                <form id="settings-form" onSubmit={handleSubmit} className="space-y-3 max-w-xl">
+                  {keys.map((key, index) => (
+                    <div key={index} className="flex gap-2 items-center">
+                      <div className="relative flex-1">
+                        <Key className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                        <Input
+                          type="password"
+                          placeholder={`gsk_key_${index + 1}…`}
+                          className="pl-9 bg-background/50 font-mono text-sm focus-visible:ring-primary/50"
+                          value={key}
+                          onChange={(e) => handleKeyChange(index, e.target.value)}
+                          autoComplete="off"
+                        />
+                      </div>
+                      {keys.length > 1 && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleRemoveKey(index)}
+                          className="text-muted-foreground hover:text-destructive shrink-0"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      )}
+                    </div>
+                  ))}
+                  {keys.length < 5 && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={handleAddKey}
+                      className="w-full border-dashed text-muted-foreground hover:text-foreground max-w-xl"
+                    >
+                      <Plus className="w-4 h-4 mr-2" /> Add Key Slot ({keys.length}/5)
+                    </Button>
+                  )}
+                </form>
+
+                <p className="text-xs text-muted-foreground max-w-xl">
+                  <strong>Tip:</strong> On Render, set <code className="text-xs bg-background/60 px-1 rounded">GROQ_KEY_1</code> … <code className="text-xs bg-background/60 px-1 rounded">GROQ_KEY_5</code> as environment variables instead — they survive redeploys and take priority over keys saved here.
+                </p>
+              </div>
             )}
           </CardContent>
-          <CardFooter className="border-t border-border/10 pt-6">
-            <Button type="submit" form="settings-form" className="gap-2" disabled={setApiKeys.isPending}>
-              {setApiKeys.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-              Save Configuration
-            </Button>
-          </CardFooter>
+
+          {!isLoading && !isEnv && (
+            <CardFooter className="border-t border-border/10 pt-6">
+              <Button
+                type="submit"
+                form="settings-form"
+                className="gap-2"
+                disabled={setApiKeys.isPending}
+              >
+                {setApiKeys.isPending ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Save className="w-4 h-4" />
+                )}
+                Save Configuration
+              </Button>
+            </CardFooter>
+          )}
         </Card>
       </div>
     </AppLayout>

@@ -32,6 +32,8 @@ export const SetApiKeysBody = zod.object({
 export const SetApiKeysResponse = zod.object({
   "configured": zod.boolean(),
   "keyCount": zod.number(),
+  "source": zod.enum(['env', 'stored', 'none']).describe('env = loaded from environment variables; stored = saved in JSON file; none = no keys configured'),
+  "readonly": zod.boolean().describe('true when keys come from environment variables and cannot be changed via UI'),
   "maskedKeys": zod.array(zod.string()).optional()
 })
 
@@ -43,6 +45,8 @@ export const SetApiKeysResponse = zod.object({
 export const GetApiKeyStatusResponse = zod.object({
   "configured": zod.boolean(),
   "keyCount": zod.number(),
+  "source": zod.enum(['env', 'stored', 'none']).describe('env = loaded from environment variables; stored = saved in JSON file; none = no keys configured'),
+  "readonly": zod.boolean().describe('true when keys come from environment variables and cannot be changed via UI'),
   "maskedKeys": zod.array(zod.string()).optional()
 })
 
@@ -56,7 +60,7 @@ export const ListSessionsResponseItem = zod.object({
   "createdAt": zod.string(),
   "updatedAt": zod.string(),
   "messageCount": zod.number(),
-  "status": zod.enum(['idle', 'planning', 'executing', 'reviewing', 'done', 'error']),
+  "status": zod.enum(['idle', 'planning', 'executing', 'reviewing', 'done', 'error', 'needs_keys']),
   "hasProject": zod.boolean().optional()
 })
 export const ListSessionsResponse = zod.array(ListSessionsResponseItem)
@@ -82,7 +86,7 @@ export const GetSessionResponse = zod.object({
   "title": zod.string(),
   "createdAt": zod.string(),
   "updatedAt": zod.string(),
-  "status": zod.enum(['idle', 'planning', 'executing', 'reviewing', 'done', 'error']),
+  "status": zod.enum(['idle', 'planning', 'executing', 'reviewing', 'done', 'error', 'needs_keys']),
   "messages": zod.array(zod.object({
   "id": zod.string(),
   "sessionId": zod.string(),
@@ -141,7 +145,7 @@ export const GetPipelineStatusParams = zod.object({
 
 export const GetPipelineStatusResponse = zod.object({
   "sessionId": zod.string(),
-  "status": zod.enum(['idle', 'planning', 'executing', 'reviewing', 'done', 'error']),
+  "status": zod.enum(['idle', 'planning', 'executing', 'reviewing', 'done', 'error', 'needs_keys']),
   "currentStep": zod.string().nullish(),
   "agents": zod.array(zod.object({
   "name": zod.string(),

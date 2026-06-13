@@ -254,12 +254,19 @@ components:
 
     ApiKeyStatus:
       type: object
-      required: [configured, keyCount]
+      required: [configured, keyCount, source, readonly]
       properties:
         configured:
           type: boolean
         keyCount:
           type: integer
+        source:
+          type: string
+          enum: [env, stored, none]
+          description: "env = loaded from environment variables; stored = saved in JSON file; none = no keys configured"
+        readonly:
+          type: boolean
+          description: "true when keys come from environment variables and cannot be changed via UI"
         maskedKeys:
           type: array
           items:
@@ -281,7 +288,7 @@ components:
           type: integer
         status:
           type: string
-          enum: [idle, planning, executing, reviewing, done, error]
+          enum: [idle, planning, executing, reviewing, done, error, needs_keys]
         hasProject:
           type: boolean
 
@@ -306,7 +313,7 @@ components:
           type: string
         status:
           type: string
-          enum: [idle, planning, executing, reviewing, done, error]
+          enum: [idle, planning, executing, reviewing, done, error, needs_keys]
         messages:
           type: array
           items:
@@ -353,7 +360,7 @@ components:
           type: string
         status:
           type: string
-          enum: [idle, planning, executing, reviewing, done, error]
+          enum: [idle, planning, executing, reviewing, done, error, needs_keys]
         currentStep:
           type: ["string", "null"]
         agents:

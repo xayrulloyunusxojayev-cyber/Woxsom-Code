@@ -16,4 +16,5 @@ export const SessionStatus = {
   reviewing: 'reviewing',
   done: 'done',
   error: 'error',
+  needs_keys: 'needs_keys',
 } as const;

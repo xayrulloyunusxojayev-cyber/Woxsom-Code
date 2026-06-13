@@ -1,11 +1,11 @@
-import { callGroq } from "./groq";
+import { callGroq, GroqAuthError } from "./groq";
 import { messageDb, sessionDb, projectDb, type ProjectFile } from "./db";
 import { selectModelForTask } from "./models";
 import { logger } from "./logger";
 
 export interface PipelineState {
   sessionId: string;
-  status: "idle" | "planning" | "executing" | "reviewing" | "done" | "error";
+  status: "idle" | "planning" | "executing" | "reviewing" | "done" | "error" | "needs_keys";
   currentStep: string | null;
   progress: number;
   agents: AgentState[];
@@ -319,26 +319,43 @@ Always include: package.json, tsconfig.json, .gitignore, README.md, .env.example
     logger.info({ sessionId, fileCount: files.length }, "Pipeline completed successfully");
   } catch (err) {
     const error = err as Error;
-    logger.error({ sessionId, error: error.message }, "Pipeline error");
+    const isAuthError = err instanceof GroqAuthError;
+    logger.error({ sessionId, error: error.message, isAuthError }, "Pipeline error");
 
-    updatePipeline(sessionId, {
-      status: "error",
-      currentStep: `Error: ${error.message}`,
-      progress: 0,
-    });
+    // Mark any still-active agents as errored
     pipelines.get(sessionId)?.agents.forEach((a) => {
       if (a.status === "active") {
         updateAgent(sessionId, a.name, { status: "error" });
       }
     });
 
-    sessionDb.updateStatus(sessionId, "error");
-    addSystemMessage(
-      sessionId,
-      `**Pipeline Error**\n\n${error.message}\n\nPlease check your API keys in Settings and try again.`,
-      "system",
-      "System"
-    );
+    if (isAuthError) {
+      updatePipeline(sessionId, {
+        status: "needs_keys",
+        currentStep: "API key rejected — please update keys in Settings",
+        progress: 0,
+      });
+      sessionDb.updateStatus(sessionId, "needs_keys");
+      addSystemMessage(
+        sessionId,
+        `**Authentication Error**\n\n${error.message}\n\nYour Groq API key was rejected. Go to **Settings** and enter a valid key, then start a new session.`,
+        "system",
+        "System"
+      );
+    } else {
+      updatePipeline(sessionId, {
+        status: "error",
+        currentStep: `Error: ${error.message}`,
+        progress: 0,
+      });
+      sessionDb.updateStatus(sessionId, "error");
+      addSystemMessage(
+        sessionId,
+        `**Pipeline Error**\n\n${error.message}\n\nPlease check your API keys in Settings and try again.`,
+        "system",
+        "System"
+      );
+    }
   }
 }
 
