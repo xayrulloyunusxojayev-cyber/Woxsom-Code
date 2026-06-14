@@ -33,34 +33,57 @@ import {
   ExternalLink,
   RefreshCw,
   AlertCircle,
+  LogOut,
 } from "lucide-react";
 
 const API_BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 async function checkGitHubToken(sessionId: string): Promise<boolean> {
-  const r = await fetch(`${API_BASE}/api/github/token-status?sessionId=${sessionId}`);
-  if (!r.ok) return false;
-  const data = (await r.json()) as { connected: boolean };
-  return data.connected;
+  try {
+    const r = await fetch(`${API_BASE}/api/github/token-status?sessionId=${encodeURIComponent(sessionId)}`);
+    if (!r.ok) return false;
+    const data = (await r.json()) as { connected: boolean };
+    return data.connected;
+  } catch {
+    return false;
+  }
+}
+
+async function clearGitHubToken(sessionId: string): Promise<void> {
+  try {
+    await fetch(`${API_BASE}/api/github/token?sessionId=${encodeURIComponent(sessionId)}`, {
+      method: "DELETE",
+    });
+  } catch {
+    // best-effort
+  }
 }
 
 async function syncToGitHub(
   sessionId: string,
   repoName: string
 ): Promise<{ url?: string; error?: string; code?: string }> {
-  const r = await fetch(`${API_BASE}/api/github/sync`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ sessionId, repoName }),
-  });
-  const data = (await r.json()) as { url?: string; error?: string; code?: string };
-  if (!r.ok) return { error: data.error ?? "Sync failed", code: (data as { error?: string }).error };
-  return data;
+  try {
+    const r = await fetch(`${API_BASE}/api/github/sync`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionId, repoName }),
+    });
+    const data = (await r.json()) as { url?: string; error?: string };
+    if (!r.ok) return { error: data.error ?? "Sync failed", code: data.error };
+    return data;
+  } catch (err) {
+    return { error: (err as Error).message };
+  }
+}
+
+function redirectToGitHubAuth(sessionId: string) {
+  window.location.href = `${API_BASE}/api/github/auth?sessionId=${encodeURIComponent(sessionId)}`;
 }
 
 export default function ChatPage() {
   const params = useParams();
-  const [location, setLocation] = useLocation();
+  const [, setLocation] = useLocation();
   const queryClient = useQueryClient();
   const scrollRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
@@ -77,32 +100,37 @@ export default function ChatPage() {
   const [githubConnected, setGithubConnected] = useState(false);
   const [checkingToken, setCheckingToken] = useState(false);
 
-  // Detect return from GitHub OAuth callback (?github_ready=1&sessionId=...)
+  // ── Detect return from GitHub OAuth callback ─────────────────────────────
+  // The callback now redirects to /chat/:sessionId?github_ready=1
+  // so params.id is already the correct session — no sessionId query param needed.
   useEffect(() => {
     const search = new URLSearchParams(window.location.search);
     const ready = search.get("github_ready");
     const errorMsg = search.get("github_error");
-    const returnedSessionId = search.get("sessionId");
 
-    if ((ready || errorMsg) && returnedSessionId) {
-      // Strip the query params from the URL
-      window.history.replaceState({}, "", window.location.pathname);
+    if (!ready && !errorMsg) return;
 
-      if (ready === "1") {
-        setGithubConnected(true);
-        setGithubDialogOpen(true);
-        toast({ title: "GitHub Connected", description: "You can now push your project to GitHub." });
-      } else if (errorMsg) {
-        toast({
-          title: "GitHub Auth Failed",
-          description: decodeURIComponent(errorMsg),
-          variant: "destructive",
-        });
-      }
+    // Clean the query string from the URL without reloading
+    window.history.replaceState({}, "", window.location.pathname);
+
+    if (ready === "1") {
+      setGithubConnected(true);
+      setRepoUrl(null);
+      setRepoName("");
+      setGithubDialogOpen(true);
+      toast({ title: "GitHub Connected", description: "You can now push your project to GitHub." });
+    } else if (errorMsg) {
+      toast({
+        title: "GitHub Auth Failed",
+        description: decodeURIComponent(errorMsg),
+        variant: "destructive",
+      });
     }
-  }, [location, toast]);
+  // Run once on mount and whenever the session changes (i.e. a new /chat/:id render)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId]);
 
-  // Auto-create session if none exist on empty /chat route
+  // ── Auto-create session if none exist on empty /chat route ───────────────
   useEffect(() => {
     if (!sessionId && !sessionsLoading && sessions) {
       if (sessions.length > 0) {
@@ -157,14 +185,14 @@ export default function ChatPage() {
     );
   };
 
-  // Auto-scroll
+  // Auto-scroll on new messages
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [session?.messages]);
 
-  // ── GitHub sync handlers ───────────────────────────────────────────────────
+  // ── GitHub handlers ────────────────────────────────────────────────────────
   const handleOpenGitHubDialog = useCallback(async () => {
     if (!sessionId) return;
     setRepoUrl(null);
@@ -176,8 +204,7 @@ export default function ChatPage() {
     setGithubConnected(connected);
 
     if (!connected) {
-      // Redirect to GitHub OAuth — callback will return here with ?github_ready=1
-      window.location.href = `${API_BASE}/api/github/auth?sessionId=${sessionId}`;
+      redirectToGitHubAuth(sessionId);
       return;
     }
 
@@ -189,7 +216,11 @@ export default function ChatPage() {
 
     const cleanName = repoName.trim().replace(/\s+/g, "-").replace(/[^a-zA-Z0-9._-]/g, "");
     if (!cleanName) {
-      toast({ title: "Invalid repo name", description: "Use letters, numbers, hyphens, or dots.", variant: "destructive" });
+      toast({
+        title: "Invalid repo name",
+        description: "Use letters, numbers, hyphens, or dots.",
+        variant: "destructive",
+      });
       return;
     }
 
@@ -198,28 +229,37 @@ export default function ChatPage() {
       const result = await syncToGitHub(sessionId, cleanName);
       if (result.url) {
         setRepoUrl(result.url);
-        toast({ title: "Pushed to GitHub!", description: `Repository created: ${cleanName}` });
+        toast({ title: "Pushed to GitHub!", description: `Repository: ${cleanName}` });
       } else if (result.code === "no_token") {
+        // Token expired mid-session — clear state and re-auth
         setGithubConnected(false);
         setGithubDialogOpen(false);
+        await clearGitHubToken(sessionId);
         toast({
           title: "Session expired",
-          description: "GitHub connection expired. Reconnecting…",
+          description: "Reconnecting to GitHub…",
           variant: "destructive",
         });
-        window.location.href = `${API_BASE}/api/github/auth?sessionId=${sessionId}`;
+        redirectToGitHubAuth(sessionId);
       } else {
-        toast({ title: "Sync Failed", description: result.error ?? "Unknown error", variant: "destructive" });
+        toast({
+          title: "Sync Failed",
+          description: result.error ?? "Unknown error",
+          variant: "destructive",
+        });
       }
     } finally {
       setSyncing(false);
     }
   }, [sessionId, repoName, toast]);
 
-  const handleReconnect = useCallback(() => {
+  /** Clear the stored token server-side and restart the OAuth flow. */
+  const handleReconnect = useCallback(async () => {
     if (!sessionId) return;
     setGithubDialogOpen(false);
-    window.location.href = `${API_BASE}/api/github/auth?sessionId=${sessionId}`;
+    setGithubConnected(false);
+    await clearGitHubToken(sessionId);
+    redirectToGitHubAuth(sessionId);
   }, [sessionId]);
 
   if (!sessionId) {
@@ -232,6 +272,8 @@ export default function ChatPage() {
       </AppLayout>
     );
   }
+
+  const isPipelineRunning = ["planning", "executing", "reviewing"].includes(session?.status || "");
 
   return (
     <AppLayout>
@@ -248,7 +290,7 @@ export default function ChatPage() {
               </h1>
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <span className="capitalize">{session?.status || "idle"}</span>
-                {["planning", "executing", "reviewing"].includes(session?.status || "") && (
+                {isPipelineRunning && (
                   <span className="relative flex h-2 w-2">
                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75" />
                     <span className="relative inline-flex rounded-full h-2 w-2 bg-primary" />
@@ -259,20 +301,33 @@ export default function ChatPage() {
           </div>
 
           {session?.hasProject && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleOpenGitHubDialog}
-              disabled={checkingToken}
-              className="gap-2 bg-background border-primary/30 hover:border-primary/60 hover:bg-primary/5 transition-colors"
-            >
-              {checkingToken ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <Github className="w-4 h-4" />
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleOpenGitHubDialog}
+                disabled={checkingToken}
+                className="gap-2 bg-background border-primary/30 hover:border-primary/60 hover:bg-primary/5 transition-colors"
+              >
+                {checkingToken ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Github className="w-4 h-4" />
+                )}
+                Sync to GitHub
+              </Button>
+
+              {githubConnected && (
+                <button
+                  onClick={() => void handleReconnect()}
+                  title="Disconnect and reconnect GitHub account"
+                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-destructive transition-colors px-1"
+                >
+                  <LogOut className="w-3 h-3" />
+                  Reconnect
+                </button>
               )}
-              Sync to GitHub
-            </Button>
+            </div>
           )}
         </header>
 
@@ -310,20 +365,13 @@ export default function ChatPage() {
                     onChange={(e) => setPrompt(e.target.value)}
                     placeholder="Initialize new objective..."
                     className="w-full h-14 pl-4 pr-12 rounded-xl border-primary/20 bg-background/80 backdrop-blur-md focus-visible:ring-primary/50 text-base font-mono shadow-lg"
-                    disabled={
-                      sendMessage.isPending ||
-                      ["planning", "executing", "reviewing"].includes(session?.status || "")
-                    }
+                    disabled={sendMessage.isPending || isPipelineRunning}
                   />
                   <Button
                     type="submit"
                     size="icon"
                     className="absolute right-2 top-2 h-10 w-10 rounded-lg glow-primary"
-                    disabled={
-                      !prompt.trim() ||
-                      sendMessage.isPending ||
-                      ["planning", "executing", "reviewing"].includes(session?.status || "")
-                    }
+                    disabled={!prompt.trim() || sendMessage.isPending || isPipelineRunning}
                   >
                     {sendMessage.isPending ? (
                       <Loader2 className="w-4 h-4 animate-spin" />
@@ -338,7 +386,7 @@ export default function ChatPage() {
         </div>
       </div>
 
-      {/* ── GitHub Sync Dialog ────────────────────────────────────────────────── */}
+      {/* ── GitHub Sync Dialog ───────────────────────────────────────────────── */}
       <Dialog open={githubDialogOpen} onOpenChange={setGithubDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -349,7 +397,7 @@ export default function ChatPage() {
             <DialogDescription>
               {repoUrl
                 ? "Your project has been pushed to GitHub."
-                : "Enter a repository name. A new public repository will be created in your GitHub account and your generated project files will be pushed in a single initial commit."}
+                : "Enter a name for the repository. If it already exists, a new commit will be pushed on top of it."}
             </DialogDescription>
           </DialogHeader>
 
@@ -359,7 +407,7 @@ export default function ChatPage() {
               <div className="flex items-center gap-3 rounded-lg border border-green-500/30 bg-green-500/10 p-4">
                 <Github className="w-5 h-5 text-green-400 shrink-0" />
                 <div className="min-w-0">
-                  <p className="text-sm font-medium text-green-400">Repository created!</p>
+                  <p className="text-sm font-medium text-green-400">Repository synced!</p>
                   <a
                     href={repoUrl}
                     target="_blank"
@@ -384,7 +432,7 @@ export default function ChatPage() {
                 <div className="flex items-start gap-3 rounded-lg border border-yellow-500/30 bg-yellow-500/10 p-3">
                   <AlertCircle className="w-4 h-4 text-yellow-400 mt-0.5 shrink-0" />
                   <p className="text-xs text-yellow-400">
-                    GitHub connection lost. Click "Reconnect" to re-authenticate.
+                    GitHub connection lost. Click "Reconnect GitHub" below to re-authenticate.
                   </p>
                 </div>
               )}
@@ -405,12 +453,24 @@ export default function ChatPage() {
                   }}
                   disabled={syncing || !githubConnected}
                   className="font-mono"
-                  autoFocus
+                  autoFocus={githubConnected}
                 />
                 <p className="text-xs text-muted-foreground">
-                  Letters, numbers, hyphens, and dots only. Spaces will be converted to hyphens.
+                  Letters, numbers, hyphens, dots only. Spaces become hyphens. If the repo
+                  already exists, a new commit is added.
                 </p>
               </div>
+
+              {githubConnected && (
+                <button
+                  type="button"
+                  onClick={() => void handleReconnect()}
+                  className="text-xs text-muted-foreground hover:text-destructive transition-colors flex items-center gap-1"
+                >
+                  <LogOut className="w-3 h-3" />
+                  Disconnect &amp; reconnect a different account
+                </button>
+              )}
             </div>
           )}
 
@@ -420,13 +480,17 @@ export default function ChatPage() {
                 Close
               </Button>
             ) : !githubConnected ? (
-              <Button onClick={handleReconnect} className="gap-2 w-full">
+              <Button onClick={() => void handleReconnect()} className="gap-2 w-full">
                 <Github className="w-4 h-4" />
                 Reconnect GitHub
               </Button>
             ) : (
               <>
-                <Button variant="outline" onClick={() => setGithubDialogOpen(false)} disabled={syncing}>
+                <Button
+                  variant="outline"
+                  onClick={() => setGithubDialogOpen(false)}
+                  disabled={syncing}
+                >
                   Cancel
                 </Button>
                 <Button

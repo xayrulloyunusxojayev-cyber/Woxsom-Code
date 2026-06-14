@@ -19,6 +19,11 @@ router.get("/github/auth", (req, res): void => {
     res.status(400).json({ error: "sessionId is required" });
     return;
   }
+  // If the session already has a valid token, skip re-auth and go straight back.
+  if (hasGitHubToken(sessionId)) {
+    res.redirect(`/chat/${encodeURIComponent(sessionId)}?github_ready=1`);
+    return;
+  }
   try {
     const url = getOAuthUrl(sessionId);
     res.redirect(url);
@@ -34,19 +39,39 @@ router.get("/github/callback", async (req, res): Promise<void> => {
   const code = req.query.code as string | undefined;
   const state = req.query.state as string | undefined; // state = sessionId
 
-  if (!code || !state) {
-    res.status(400).send("Missing code or state from GitHub callback.");
+  // If GitHub sent back an error (e.g. user denied access)
+  const ghError = req.query.error as string | undefined;
+  if (ghError) {
+    const desc = (req.query.error_description as string | undefined) ?? ghError;
+    logger.warn({ ghError, sessionId: state }, "GitHub OAuth denied by user");
+    const dest = state ? `/chat/${encodeURIComponent(state)}` : "/";
+    res.redirect(`${dest}?github_error=${encodeURIComponent(desc)}`);
+    return;
+  }
+
+  if (!state) {
+    res.status(400).send("Missing state parameter from GitHub callback.");
+    return;
+  }
+
+  // If there's no code but we already have a token, just redirect back as success.
+  if (!code) {
+    if (hasGitHubToken(state)) {
+      res.redirect(`/chat/${encodeURIComponent(state)}?github_ready=1`);
+    } else {
+      res.redirect(`/chat/${encodeURIComponent(state)}?github_error=${encodeURIComponent("No authorization code received")}`);
+    }
     return;
   }
 
   try {
     await exchangeCodeAndStore(code, state);
-    // Redirect back to the chat page so the user can complete the sync
-    res.redirect(`/?github_ready=1&sessionId=${encodeURIComponent(state)}`);
+    // Redirect to the specific chat session so ChatPage can pick up the flag.
+    res.redirect(`/chat/${encodeURIComponent(state)}?github_ready=1`);
   } catch (err) {
     const msg = (err as Error).message;
     logger.error({ err: msg, sessionId: state }, "GitHub OAuth callback failed");
-    res.redirect(`/?github_error=${encodeURIComponent(msg)}&sessionId=${encodeURIComponent(state)}`);
+    res.redirect(`/chat/${encodeURIComponent(state)}?github_error=${encodeURIComponent(msg)}`);
   }
 });
 
@@ -68,10 +93,11 @@ router.delete("/github/token", (req, res): void => {
     return;
   }
   clearGitHubToken(sessionId);
+  logger.info({ sessionId }, "GitHub token cleared");
   res.json({ ok: true });
 });
 
-/** Create a GitHub repo and push the generated project files. */
+/** Create (or update) a GitHub repo and push the generated project files. */
 router.post("/github/sync", async (req, res): Promise<void> => {
   const { sessionId, repoName } = req.body as {
     sessionId?: string;
@@ -106,9 +132,7 @@ router.post("/github/sync", async (req, res): Promise<void> => {
     const msg = (err as Error).message;
     logger.error({ err: msg, sessionId, repoName }, "GitHub sync failed");
 
-    if (msg.includes("already exists")) {
-      res.status(409).json({ error: msg });
-    } else if (msg.includes("No GitHub token")) {
+    if (msg.includes("No GitHub token")) {
       res.status(401).json({ error: "no_token", message: msg });
     } else {
       res.status(500).json({ error: msg });
