@@ -1,41 +1,58 @@
-import { createAppAuth } from "@octokit/auth-app";
 import { Octokit } from "@octokit/rest";
 import { logger } from "./logger";
 
 // ─── In-memory token store: sessionId → GitHub user access token ─────────────
 const userTokens = new Map<string, string>();
 
-function getAppCredentials() {
-  const appId = process.env.GITHUB_APP_ID;
-  const privateKey = (process.env.GITHUB_PRIVATE_KEY ?? "").replace(/\\n/g, "\n");
+function getOAuthCredentials() {
   const clientId = process.env.GITHUB_CLIENT_ID;
   const clientSecret = process.env.GITHUB_CLIENT_SECRET;
 
-  if (!appId || !privateKey || !clientId || !clientSecret) {
+  if (!clientId || !clientSecret) {
     throw new Error(
-      "GitHub App credentials are not fully configured. Set GITHUB_APP_ID, GITHUB_PRIVATE_KEY, GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET."
+      "GitHub OAuth credentials are not configured. Set GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET."
     );
   }
-  return { appId, privateKey, clientId, clientSecret };
+  return { clientId, clientSecret };
 }
 
 export function getOAuthUrl(state: string): string {
-  const { clientId } = getAppCredentials();
+  const { clientId } = getOAuthCredentials();
+  // request 'repo' scope so the token can create + push to repositories
   const params = new URLSearchParams({ client_id: clientId, state, scope: "repo" });
   return `https://github.com/login/oauth/authorize?${params.toString()}`;
 }
 
+/**
+ * Exchange an OAuth authorization code for a classic user access token.
+ * Uses the standard GitHub OAuth token endpoint directly — this produces a
+ * full-scope token (respecting the requested scopes) rather than the
+ * restricted GitHub App user-to-server token that @octokit/auth-app returns.
+ */
 export async function exchangeCodeAndStore(code: string, sessionId: string): Promise<void> {
-  const creds = getAppCredentials();
-  const auth = createAppAuth({
-    appId: creds.appId,
-    privateKey: creds.privateKey,
-    clientId: creds.clientId,
-    clientSecret: creds.clientSecret,
+  const { clientId, clientSecret } = getOAuthCredentials();
+
+  const response = await fetch("https://github.com/login/oauth/access_token", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify({ client_id: clientId, client_secret: clientSecret, code }),
   });
-  const userAuth = await auth({ type: "oauth-user", code });
-  userTokens.set(sessionId, (userAuth as { token: string }).token);
-  logger.info({ sessionId }, "GitHub user access token stored");
+
+  if (!response.ok) {
+    throw new Error(`GitHub token endpoint returned HTTP ${response.status}`);
+  }
+
+  const data = (await response.json()) as { access_token?: string; error?: string; error_description?: string };
+
+  if (data.error || !data.access_token) {
+    throw new Error(data.error_description ?? data.error ?? "GitHub did not return an access token");
+  }
+
+  userTokens.set(sessionId, data.access_token);
+  logger.info({ sessionId }, "GitHub user access token stored (classic OAuth)");
 }
 
 export function hasGitHubToken(sessionId: string): boolean {
