@@ -4,6 +4,7 @@ import keysRouter from "./keys";
 import sessionsRouter from "./sessions";
 import downloadRouter from "./download";
 import modelsRouter from "./models";
+import githubRouter from "./github";
 
 const router: IRouter = Router();
 
@@ -12,5 +13,6 @@ router.use(keysRouter);
 router.use(sessionsRouter);
 router.use(downloadRouter);
 router.use(modelsRouter);
+router.use(githubRouter);
 
 export default router;
