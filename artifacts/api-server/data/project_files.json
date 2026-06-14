@@ -1,1 +1,100 @@
-[]
+[
+  {
+    "id": "5266ded3-14c2-4bf0-85c7-61ab3a3cb9b9",
+    "sessionId": "6bfc6da5-7ecc-487e-8cb8-2425e600fa8f",
+    "filePath": "typescript",
+    "content": "import React from 'react';\nimport './styles/index.css';\nimport InteractionComponents from './components/InteractionComponents';\n\nfunction App() {\n  return (\n    <div className=\"app-container\">\n      <h1>Simple AI</h1>\n      <InteractionComponents />\n    </div>\n  );\n}\n\nexport default App;\n",
+    "createdAt": "2026-06-14T04:30:24.000Z"
+  },
+  {
+    "id": "9e73e9af-1dca-4b9d-8ca1-52911db6bc3d",
+    "sessionId": "6bfc6da5-7ecc-487e-8cb8-2425e600fa8f",
+    "filePath": "css",
+    "content": "body {\n  font-family: Arial, sans-serif;\n  background-color: #f0f0f0;\n}\n\n.app-container {\n  max-width: 800px;\n  margin: 40px auto;\n  padding: 20px;\n  background-color: #fff;\n  border: 1px solid #ddd;\n  box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);\n}\n\n.interaction-components {\n  margin-top: 20px;\n}\n",
+    "createdAt": "2026-06-14T04:30:24.000Z"
+  },
+  {
+    "id": "1d9bd794-7dec-4c99-8e0b-fbfa96609137",
+    "sessionId": "6bfc6da5-7ecc-487e-8cb8-2425e600fa8f",
+    "filePath": "server/index.ts",
+    "content": "import express from 'express';\nimport { errorHandler } from './src/utils/errorHandler';\nimport aiRoutes from './src/routes/aiRoutes';\nimport { PORT } from './src/types';\n\nconst app = express();\n\n// Middleware\napp.use(express.json());\n\n// Routes\napp.use('/api/ai', aiRoutes);\n\n// Error handling\napp.use(errorHandler);\n\n// Start server\nconst startServer = async () => {\n  try {\n    const port = process.env.PORT || PORT;\n    app.listen(port, () => {\n      console.log(`Server running on port ${port}`);\n    });\n  } catch (error) {\n    console.error('Failed to start server:', error);\n    process.exit(1);\n  }\n};\n\nstartServer();\n",
+    "createdAt": "2026-06-14T04:30:24.000Z"
+  },
+  {
+    "id": "1f157a58-ce06-484e-8dbc-dd926ad513f2",
+    "sessionId": "6bfc6da5-7ecc-487e-8cb8-2425e600fa8f",
+    "filePath": "server/src/controllers/aiController.ts",
+    "content": "import { Request, Response, NextFunction } from 'express';\nimport { AIModel } from '../models/AIModel';\nimport { AIRequest, AIResponse } from '../types';\n\nexport const aiController = {\n  async interact(req: Request, res: Response, next: NextFunction) {\n    try {\n      const { input } = req.body as AIRequest;\n      \n      if (!input) {\n        throw new Error('Input is required');\n      }\n\n      const aiModel = new AIModel();\n      const response = await aiModel.generateResponse(input);\n      \n      res.json({\n        success: true,\n        data: {\n          response\n        }\n      });\n    } catch (error) {\n      next(error);\n    }\n  }\n};\n",
+    "createdAt": "2026-06-14T04:30:24.000Z"
+  },
+  {
+    "id": "b0ccc0b0-f1e9-4025-b85e-d6f9684c33ed",
+    "sessionId": "6bfc6da5-7ecc-487e-8cb8-2425e600fa8f",
+    "filePath": "server/src/models/AIModel.ts",
+    "content": "export class AIModel {\n  private static instance: AIModel;\n  \n  private constructor() {}\n  \n  public static getInstance(): AIModel {\n    if (!AIModel.instance) {\n      AIModel.instance = new AIModel();\n    }\n    return AIModel.instance;\n  }\n\n  public async generateResponse(input: string): Promise<string> {\n    // Simple rule-based AI for demonstration\n    // This would be replaced with actual AI logic in production\n    const lowerInput = input.toLowerCase();\n    \n    if (lowerInput.includes('hello') || lowerInput.includes('hi')) {\n      return 'Hello! How can I help you today?';\n    } else if (lowerInput.includes('how are you')) {\n      return 'I\\'m a computer program, so I don\\'t have feelings, but thanks for asking!';\n    } else if (lowerInput.includes('weather')) {\n      return 'I currently don\\'t have access to real-time weather data.';\n    } else {\n      return 'I\\'m still learning. Can you rephrase that or ask something else?';\n    }\n  }\n}\n",
+    "createdAt": "2026-06-14T04:30:24.000Z"
+  },
+  {
+    "id": "29d5c605-f197-4f52-abe3-1e5533c687fd",
+    "sessionId": "6bfc6da5-7ecc-487e-8cb8-2425e600fa8f",
+    "filePath": "server/src/routes/aiRoutes.ts",
+    "content": "import express from 'express';\nimport { aiController } from '../controllers/aiController';\n\nconst router = express.Router();\n\n// AI interaction endpoint\nrouter.post('/interact', aiController.interact);\n\nexport default router;\n",
+    "createdAt": "2026-06-14T04:30:24.000Z"
+  },
+  {
+    "id": "e8dc114b-2c6f-443e-87e3-b8fcc9071a14",
+    "sessionId": "6bfc6da5-7ecc-487e-8cb8-2425e600fa8f",
+    "filePath": "server/src/types.ts",
+    "content": "export type PORT = 3000 | 5000 | 8000;\n\nexport interface AIRequest {\n  input: string;\n}\n\nexport interface AIResponse {\n  response: string;\n}\n\nexport class APIError extends Error {\n  status: number;\n  \n  constructor(message: string, status: number = 500) {\n    super(message);\n    this.status = status;\n    this.name = 'APIError';\n  }\n}\n",
+    "createdAt": "2026-06-14T04:30:24.000Z"
+  },
+  {
+    "id": "32a2adbe-de59-4e25-ae91-c0e6e6942641",
+    "sessionId": "6bfc6da5-7ecc-487e-8cb8-2425e600fa8f",
+    "filePath": "server/src/utils/errorHandler.ts",
+    "content": "import { Request, Response, NextFunction } from 'express';\nimport { APIError } from '../types';\n\nexport const errorHandler = (\n  err: Error,\n  req: Request,\n  res: Response,\n  next: NextFunction\n) => {\n  console.error(err.stack);\n  \n  const status = (err instanceof APIError) ? err.status : 500;\n  const message = (err instanceof APIError) ? err.message : 'Internal server error';\n  \n  res.status(status).json({\n    success: false,\n    error: {\n      message,\n      status\n    }\n  });\n};\n",
+    "createdAt": "2026-06-14T04:30:24.000Z"
+  },
+  {
+    "id": "2e9d9cd0-ae66-4b31-8ad9-1c83ff0e526f",
+    "sessionId": "6bfc6da5-7ecc-487e-8cb8-2425e600fa8f",
+    "filePath": "package.json",
+    "content": "{\n  \"name\": \"imple-ai\",\n  \"version\": \"1.0.0\",\n  \"scripts\": {\n    \"start\": \"node server/index.ts\",\n    \"build\": \"tsc\",\n    \"test\": \"echo \\\"No tests yet\\\"\"\n  },\n  \"dependencies\": {\n    \"express\": \"^4.17.1\",\n    \"@types/express\": \"^4.17.13\",\n    \"@types/node\": \"^17.0.45\"\n  },\n  \"devDependencies\": {\n    \"typescript\": \"^4.8.4\",\n    \"@types/react\": \"^18.0.17\",\n    \"@types/react-dom\": \"^18.0.6\"\n  }\n}\n",
+    "createdAt": "2026-06-14T04:30:24.000Z"
+  },
+  {
+    "id": "7da34de5-618a-4a86-ac98-9aec7498ec28",
+    "sessionId": "6bfc6da5-7ecc-487e-8cb8-2425e600fa8f",
+    "filePath": "tsconfig.json",
+    "content": "{\n  \"compilerOptions\": {\n    \"target\": \"es6\",\n    \"module\": \"commonjs\",\n    \"strict\": true,\n    \"esModuleInterop\": true,\n    \"outDir\": \"build\"\n  },\n  \"include\": [\"src/**/*\"],\n  \"exclude\": [\"node_modules\"]\n}\n",
+    "createdAt": "2026-06-14T04:30:24.000Z"
+  },
+  {
+    "id": "f41b1ea4-27f4-4951-92d5-c32ac3c72d22",
+    "sessionId": "6bfc6da5-7ecc-487e-8cb8-2425e600fa8f",
+    "filePath": ".gitignore",
+    "content": "node_modules\nbuild\n.env\n",
+    "createdAt": "2026-06-14T04:30:24.000Z"
+  },
+  {
+    "id": "c9cab1e2-d3ce-413e-86e2-0cd9bcbbf9f3",
+    "sessionId": "6bfc6da5-7ecc-487e-8cb8-2425e600fa8f",
+    "filePath": "README.md",
+    "content": "# Imple AI Project\n\n## Setup\n\n1. Clone the repository: `git clone https://github.com/your-username/imple-ai.git`\n2. Install dependencies: `npm install`\n3. Create a `.env` file based on `.env.example` for environment variables\n\n## Run\n\n1. Start the server: `npm start`\n2. Build the project: `npm run build`\n\n## Notes\n\n- This project uses TypeScript for both frontend and backend.\n- The frontend is built with React.\n- The backend uses Express.\n",
+    "createdAt": "2026-06-14T04:30:24.000Z"
+  },
+  {
+    "id": "eada9cb4-806e-4c80-8125-692fdf9eba9d",
+    "sessionId": "6bfc6da5-7ecc-487e-8cb8-2425e600fa8f",
+    "filePath": ".env.example",
+    "content": "# Example environment variables\nPORT=3000\nNODE_ENV=development\n",
+    "createdAt": "2026-06-14T04:30:24.000Z"
+  },
+  {
+    "id": "e3d38365-dca1-402b-aeb2-f5d852c84969",
+    "sessionId": "6bfc6da5-7ecc-487e-8cb8-2425e600fa8f",
+    "filePath": ".vscode/settings.json",
+    "content": "{\n  \"editor.codeActionsOnSave\": {\n    \"source.fixAll.eslint\": true\n  },\n  \"editor.formatOnSave\": true,\n  \"editor.defaultFormatter\": \"esbenp.prettier-vscode\",\n  \"typescript.tsdk\": \"node_modules/typescript/lib\"\n}\n",
+    "createdAt": "2026-06-14T04:30:24.000Z"
+  }
+]
