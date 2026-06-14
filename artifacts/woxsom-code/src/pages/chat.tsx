@@ -32,30 +32,19 @@ import {
   Github,
   ExternalLink,
   RefreshCw,
-  AlertCircle,
-  LogOut,
+  AlertTriangle,
 } from "lucide-react";
 
 const API_BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
-async function checkGitHubToken(sessionId: string): Promise<boolean> {
+async function checkPatConfigured(): Promise<boolean> {
   try {
-    const r = await fetch(`${API_BASE}/api/github/token-status?sessionId=${encodeURIComponent(sessionId)}`);
+    const r = await fetch(`${API_BASE}/api/github/pat-status`);
     if (!r.ok) return false;
-    const data = (await r.json()) as { connected: boolean };
-    return data.connected;
+    const data = (await r.json()) as { configured: boolean };
+    return data.configured;
   } catch {
     return false;
-  }
-}
-
-async function clearGitHubToken(sessionId: string): Promise<void> {
-  try {
-    await fetch(`${API_BASE}/api/github/token?sessionId=${encodeURIComponent(sessionId)}`, {
-      method: "DELETE",
-    });
-  } catch {
-    // best-effort
   }
 }
 
@@ -77,10 +66,6 @@ async function syncToGitHub(
   }
 }
 
-function redirectToGitHubAuth(sessionId: string) {
-  window.location.href = `${API_BASE}/api/github/auth?sessionId=${encodeURIComponent(sessionId)}`;
-}
-
 export default function ChatPage() {
   const params = useParams();
   const [, setLocation] = useLocation();
@@ -97,38 +82,7 @@ export default function ChatPage() {
   const [repoName, setRepoName] = useState("");
   const [syncing, setSyncing] = useState(false);
   const [repoUrl, setRepoUrl] = useState<string | null>(null);
-  const [githubConnected, setGithubConnected] = useState(false);
-  const [checkingToken, setCheckingToken] = useState(false);
-
-  // ── Detect return from GitHub OAuth callback ─────────────────────────────
-  // The callback now redirects to /chat/:sessionId?github_ready=1
-  // so params.id is already the correct session — no sessionId query param needed.
-  useEffect(() => {
-    const search = new URLSearchParams(window.location.search);
-    const ready = search.get("github_ready");
-    const errorMsg = search.get("github_error");
-
-    if (!ready && !errorMsg) return;
-
-    // Clean the query string from the URL without reloading
-    window.history.replaceState({}, "", window.location.pathname);
-
-    if (ready === "1") {
-      setGithubConnected(true);
-      setRepoUrl(null);
-      setRepoName("");
-      setGithubDialogOpen(true);
-      toast({ title: "GitHub Connected", description: "You can now push your project to GitHub." });
-    } else if (errorMsg) {
-      toast({
-        title: "GitHub Auth Failed",
-        description: decodeURIComponent(errorMsg),
-        variant: "destructive",
-      });
-    }
-  // Run once on mount and whenever the session changes (i.e. a new /chat/:id render)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId]);
+  const [checkingPat, setCheckingPat] = useState(false);
 
   // ── Auto-create session if none exist on empty /chat route ───────────────
   useEffect(() => {
@@ -195,21 +149,24 @@ export default function ChatPage() {
   // ── GitHub handlers ────────────────────────────────────────────────────────
   const handleOpenGitHubDialog = useCallback(async () => {
     if (!sessionId) return;
-    setRepoUrl(null);
-    setRepoName("");
 
-    setCheckingToken(true);
-    const connected = await checkGitHubToken(sessionId);
-    setCheckingToken(false);
-    setGithubConnected(connected);
+    setCheckingPat(true);
+    const hasPat = await checkPatConfigured();
+    setCheckingPat(false);
 
-    if (!connected) {
-      redirectToGitHubAuth(sessionId);
+    if (!hasPat) {
+      toast({
+        title: "GitHub token required",
+        description: "Add a Personal Access Token in API Keys to sync projects.",
+      });
+      setLocation("/keys");
       return;
     }
 
+    setRepoUrl(null);
+    setRepoName("");
     setGithubDialogOpen(true);
-  }, [sessionId]);
+  }, [sessionId, setLocation, toast]);
 
   const handleSync = useCallback(async () => {
     if (!sessionId || !repoName.trim()) return;
@@ -231,16 +188,13 @@ export default function ChatPage() {
         setRepoUrl(result.url);
         toast({ title: "Pushed to GitHub!", description: `Repository: ${cleanName}` });
       } else if (result.code === "no_token") {
-        // Token expired mid-session — clear state and re-auth
-        setGithubConnected(false);
         setGithubDialogOpen(false);
-        await clearGitHubToken(sessionId);
         toast({
-          title: "Session expired",
-          description: "Reconnecting to GitHub…",
+          title: "No GitHub token",
+          description: "Add a Personal Access Token in API Keys.",
           variant: "destructive",
         });
-        redirectToGitHubAuth(sessionId);
+        setLocation("/keys");
       } else {
         toast({
           title: "Sync Failed",
@@ -251,16 +205,7 @@ export default function ChatPage() {
     } finally {
       setSyncing(false);
     }
-  }, [sessionId, repoName, toast]);
-
-  /** Clear the stored token server-side and restart the OAuth flow. */
-  const handleReconnect = useCallback(async () => {
-    if (!sessionId) return;
-    setGithubDialogOpen(false);
-    setGithubConnected(false);
-    await clearGitHubToken(sessionId);
-    redirectToGitHubAuth(sessionId);
-  }, [sessionId]);
+  }, [sessionId, repoName, toast, setLocation]);
 
   if (!sessionId) {
     return (
@@ -301,33 +246,20 @@ export default function ChatPage() {
           </div>
 
           {session?.hasProject && (
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleOpenGitHubDialog}
-                disabled={checkingToken}
-                className="gap-2 bg-background border-primary/30 hover:border-primary/60 hover:bg-primary/5 transition-colors"
-              >
-                {checkingToken ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Github className="w-4 h-4" />
-                )}
-                Sync to GitHub
-              </Button>
-
-              {githubConnected && (
-                <button
-                  onClick={() => void handleReconnect()}
-                  title="Disconnect and reconnect GitHub account"
-                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-destructive transition-colors px-1"
-                >
-                  <LogOut className="w-3 h-3" />
-                  Reconnect
-                </button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void handleOpenGitHubDialog()}
+              disabled={checkingPat}
+              className="gap-2 bg-background border-primary/30 hover:border-primary/60 hover:bg-primary/5 transition-colors"
+            >
+              {checkingPat ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Github className="w-4 h-4" />
               )}
-            </div>
+              Sync to GitHub
+            </Button>
           )}
         </header>
 
@@ -397,12 +329,11 @@ export default function ChatPage() {
             <DialogDescription>
               {repoUrl
                 ? "Your project has been pushed to GitHub."
-                : "Enter a name for the repository. If it already exists, a new commit will be pushed on top of it."}
+                : "Enter a repository name. If it already exists, a new commit will be pushed on top."}
             </DialogDescription>
           </DialogHeader>
 
           {repoUrl ? (
-            /* ── Success state ── */
             <div className="space-y-4 py-2">
               <div className="flex items-center gap-3 rounded-lg border border-green-500/30 bg-green-500/10 p-4">
                 <Github className="w-5 h-5 text-green-400 shrink-0" />
@@ -426,17 +357,7 @@ export default function ChatPage() {
               </Button>
             </div>
           ) : (
-            /* ── Input state ── */
             <div className="space-y-4 py-2">
-              {!githubConnected && (
-                <div className="flex items-start gap-3 rounded-lg border border-yellow-500/30 bg-yellow-500/10 p-3">
-                  <AlertCircle className="w-4 h-4 text-yellow-400 mt-0.5 shrink-0" />
-                  <p className="text-xs text-yellow-400">
-                    GitHub connection lost. Click "Reconnect GitHub" below to re-authenticate.
-                  </p>
-                </div>
-              )}
-
               <div className="space-y-2">
                 <label htmlFor="repo-name" className="text-sm font-medium">
                   Repository name
@@ -447,30 +368,26 @@ export default function ChatPage() {
                   value={repoName}
                   onChange={(e) => setRepoName(e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.key === "Enter" && repoName.trim() && !syncing && githubConnected) {
-                      void handleSync();
-                    }
+                    if (e.key === "Enter" && repoName.trim() && !syncing) void handleSync();
                   }}
-                  disabled={syncing || !githubConnected}
+                  disabled={syncing}
                   className="font-mono"
-                  autoFocus={githubConnected}
+                  autoFocus
                 />
                 <p className="text-xs text-muted-foreground">
-                  Letters, numbers, hyphens, dots only. Spaces become hyphens. If the repo
-                  already exists, a new commit is added.
+                  Letters, numbers, hyphens, dots only. Spaces become hyphens. If the repo already
+                  exists, a new commit is added.
                 </p>
               </div>
 
-              {githubConnected && (
-                <button
-                  type="button"
-                  onClick={() => void handleReconnect()}
-                  className="text-xs text-muted-foreground hover:text-destructive transition-colors flex items-center gap-1"
-                >
-                  <LogOut className="w-3 h-3" />
-                  Disconnect &amp; reconnect a different account
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={() => { setGithubDialogOpen(false); setLocation("/keys"); }}
+                className="text-xs text-muted-foreground hover:text-primary transition-colors flex items-center gap-1"
+              >
+                <AlertTriangle className="w-3 h-3" />
+                Manage GitHub token in API Keys
+              </button>
             </div>
           )}
 
@@ -479,18 +396,9 @@ export default function ChatPage() {
               <Button variant="outline" onClick={() => setGithubDialogOpen(false)}>
                 Close
               </Button>
-            ) : !githubConnected ? (
-              <Button onClick={() => void handleReconnect()} className="gap-2 w-full">
-                <Github className="w-4 h-4" />
-                Reconnect GitHub
-              </Button>
             ) : (
               <>
-                <Button
-                  variant="outline"
-                  onClick={() => setGithubDialogOpen(false)}
-                  disabled={syncing}
-                >
+                <Button variant="outline" onClick={() => setGithubDialogOpen(false)} disabled={syncing}>
                   Cancel
                 </Button>
                 <Button
@@ -499,15 +407,9 @@ export default function ChatPage() {
                   className="gap-2"
                 >
                   {syncing ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      Syncing…
-                    </>
+                    <><Loader2 className="w-4 h-4 animate-spin" /> Syncing…</>
                   ) : (
-                    <>
-                      <RefreshCw className="w-4 h-4" />
-                      Push to GitHub
-                    </>
+                    <><RefreshCw className="w-4 h-4" /> Push to GitHub</>
                   )}
                 </Button>
               </>

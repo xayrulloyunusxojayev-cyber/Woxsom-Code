@@ -1,96 +1,37 @@
 import { Octokit } from "@octokit/rest";
 import { logger } from "./logger";
-
-// ─── In-memory token store: sessionId → GitHub user access token ─────────────
-const userTokens = new Map<string, string>();
-
-function getOAuthCredentials() {
-  const clientId = process.env.GITHUB_CLIENT_ID;
-  const clientSecret = process.env.GITHUB_CLIENT_SECRET;
-
-  if (!clientId || !clientSecret) {
-    throw new Error(
-      "GitHub OAuth credentials are not configured. Set GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET."
-    );
-  }
-  return { clientId, clientSecret };
-}
-
-export function getOAuthUrl(state: string): string {
-  const { clientId } = getOAuthCredentials();
-  // request 'repo' scope so the token can create + push to repositories
-  const params = new URLSearchParams({ client_id: clientId, state, scope: "repo" });
-  return `https://github.com/login/oauth/authorize?${params.toString()}`;
-}
-
-/**
- * Exchange an OAuth authorization code for a classic user access token.
- * Uses the standard GitHub OAuth token endpoint directly — this produces a
- * full-scope token (respecting the requested scopes) rather than the
- * restricted GitHub App user-to-server token that @octokit/auth-app returns.
- */
-export async function exchangeCodeAndStore(code: string, sessionId: string): Promise<void> {
-  const { clientId, clientSecret } = getOAuthCredentials();
-
-  const response = await fetch("https://github.com/login/oauth/access_token", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Accept: "application/json",
-    },
-    body: JSON.stringify({ client_id: clientId, client_secret: clientSecret, code }),
-  });
-
-  if (!response.ok) {
-    throw new Error(`GitHub token endpoint returned HTTP ${response.status}`);
-  }
-
-  const data = (await response.json()) as { access_token?: string; error?: string; error_description?: string };
-
-  if (data.error || !data.access_token) {
-    throw new Error(data.error_description ?? data.error ?? "GitHub did not return an access token");
-  }
-
-  userTokens.set(sessionId, data.access_token);
-  logger.info({ sessionId }, "GitHub user access token stored (classic OAuth)");
-}
-
-export function hasGitHubToken(sessionId: string): boolean {
-  return userTokens.has(sessionId);
-}
-
-export function clearGitHubToken(sessionId: string): void {
-  userTokens.delete(sessionId);
-  logger.info({ sessionId }, "GitHub token cleared");
-}
+import { secretsDb } from "./secrets";
 
 export interface SyncFile {
   filePath: string;
   content: string;
 }
 
+/** Returns true if a GitHub PAT is stored. */
+export function hasGitHubPat(): boolean {
+  return secretsDb.getGitHubPat() !== null;
+}
+
 /**
- * Create a new GitHub repository and push all files.
- * If the repository already exists (422), push a new commit on top of its
- * current HEAD instead of failing.
+ * Create a new GitHub repository and push all files as a single commit.
+ * If the repo already exists (422), pushes a new commit on top of the current HEAD.
  */
 export async function createRepoAndPush(
-  sessionId: string,
   repoName: string,
   files: SyncFile[]
 ): Promise<string> {
-  const token = userTokens.get(sessionId);
-  if (!token) {
-    throw new Error("No GitHub token for this session. Please connect GitHub first.");
+  const pat = secretsDb.getGitHubPat();
+  if (!pat) {
+    throw new Error("No GitHub token configured. Please add a Personal Access Token in the API Keys page.");
   }
 
-  const octokit = new Octokit({ auth: token });
+  const octokit = new Octokit({ auth: pat });
 
   const { data: ghUser } = await octokit.rest.users.getAuthenticated();
   const owner = ghUser.login;
   logger.info({ owner, repoName }, "Starting GitHub sync");
 
-  // ── Step 1: create repo or fetch existing one ────────────────────────────
+  // ── Step 1: create repo or fetch existing one ─────────────────────────────
   let repoHtmlUrl: string;
   let existingHeadSha: string | null = null;
   let existingTreeSha: string | null = null;
@@ -107,7 +48,7 @@ export async function createRepoAndPush(
   } catch (err: unknown) {
     const status = (err as { status?: number }).status;
     if (status === 422) {
-      // Repository already exists — fetch its current HEAD to push on top of it
+      // Repo already exists — fetch its current HEAD so we can push on top
       logger.info({ owner, repoName }, "Repository already exists, pushing update commit");
       const { data: existingRepo } = await octokit.rest.repos.get({ owner, repo: repoName });
       repoHtmlUrl = existingRepo.html_url;
@@ -120,7 +61,6 @@ export async function createRepoAndPush(
           ref: `heads/${defaultBranch}`,
         });
         existingHeadSha = ref.object.sha;
-
         const { data: headCommit } = await octokit.rest.git.getCommit({
           owner,
           repo: repoName,
@@ -128,16 +68,14 @@ export async function createRepoAndPush(
         });
         existingTreeSha = headCommit.tree.sha;
       } catch {
-        // Repo exists but has no commits yet — treat as fresh
-        existingHeadSha = null;
-        existingTreeSha = null;
+        // Repo exists but is empty — treat as fresh
       }
     } else {
       throw err;
     }
   }
 
-  // ── Step 2: create blobs in batches of 5 ────────────────────────────────
+  // ── Step 2: create blobs in batches of 5 ─────────────────────────────────
   const batchSize = 5;
   const treeEntries: Array<{ path: string; mode: "100644"; type: "blob"; sha: string }> = [];
 
@@ -154,55 +92,38 @@ export async function createRepoAndPush(
       )
     );
     blobs.forEach((blob, idx) => {
-      treeEntries.push({
-        path: batch[idx].filePath,
-        mode: "100644",
-        type: "blob",
-        sha: blob.data.sha,
-      });
+      treeEntries.push({ path: batch[idx].filePath, mode: "100644", type: "blob", sha: blob.data.sha });
     });
     logger.info({ owner, repoName, batchIndex: Math.floor(i / batchSize) + 1 }, "Blob batch created");
   }
 
-  // ── Step 3: create Git tree ──────────────────────────────────────────────
+  // ── Step 3: create Git tree ───────────────────────────────────────────────
   const { data: tree } = await octokit.rest.git.createTree({
     owner,
     repo: repoName,
     tree: treeEntries,
-    // If pushing to existing repo, layer on top of existing tree
     ...(existingTreeSha ? { base_tree: existingTreeSha } : {}),
   });
 
-  // ── Step 4: create commit ────────────────────────────────────────────────
-  const commitMessage = existingHeadSha
-    ? "Update — regenerated by Woxsom Code"
-    : "Initial commit — generated by Woxsom Code";
-
+  // ── Step 4: create commit ─────────────────────────────────────────────────
   const { data: commit } = await octokit.rest.git.createCommit({
     owner,
     repo: repoName,
-    message: commitMessage,
+    message: existingHeadSha
+      ? "Update — regenerated by Woxsom Code"
+      : "Initial commit — generated by Woxsom Code",
     tree: tree.sha,
     parents: existingHeadSha ? [existingHeadSha] : [],
   });
 
   // ── Step 5: create or update the main branch ref ─────────────────────────
   if (existingHeadSha) {
-    // Update existing ref (fast-forward)
     await octokit.rest.git.updateRef({
-      owner,
-      repo: repoName,
-      ref: "heads/main",
-      sha: commit.sha,
-      force: false,
+      owner, repo: repoName, ref: "heads/main", sha: commit.sha, force: false,
     });
   } else {
-    // Create fresh ref on empty repo
     await octokit.rest.git.createRef({
-      owner,
-      repo: repoName,
-      ref: "refs/heads/main",
-      sha: commit.sha,
+      owner, repo: repoName, ref: "refs/heads/main", sha: commit.sha,
     });
   }
 

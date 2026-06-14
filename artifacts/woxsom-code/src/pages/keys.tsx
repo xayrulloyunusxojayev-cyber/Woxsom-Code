@@ -1,6 +1,6 @@
 import { AppLayout } from "@/components/layout";
 import { useGetApiKeyStatus, useSetApiKeys } from "@workspace/api-client-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Card,
   CardContent,
@@ -22,8 +22,37 @@ import {
   AlertTriangle,
   Eye,
   EyeOff,
+  Github,
+  CheckCircle2,
+  XCircle,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+
+const API_BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
+
+interface PatStatus {
+  configured: boolean;
+  masked: string | null;
+}
+
+async function fetchPatStatus(): Promise<PatStatus> {
+  const r = await fetch(`${API_BASE}/api/github/pat-status`);
+  if (!r.ok) return { configured: false, masked: null };
+  return r.json() as Promise<PatStatus>;
+}
+
+async function savePat(pat: string): Promise<{ ok: boolean; masked?: string; error?: string }> {
+  const r = await fetch(`${API_BASE}/api/github/pat`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ pat }),
+  });
+  return r.json() as Promise<{ ok: boolean; masked?: string; error?: string }>;
+}
+
+async function deletePat(): Promise<void> {
+  await fetch(`${API_BASE}/api/github/pat`, { method: "DELETE" });
+}
 
 export default function KeysPage() {
   const { data: status, isLoading, refetch } = useGetApiKeyStatus();
@@ -33,20 +62,23 @@ export default function KeysPage() {
   const [keys, setKeys] = useState<string[]>([""]);
   const [showExisting, setShowExisting] = useState(false);
 
+  // ── GitHub PAT state ───────────────────────────────────────────────────────
+  const [patStatus, setPatStatus] = useState<PatStatus | null>(null);
+  const [patInput, setPatInput] = useState("");
+  const [showPat, setShowPat] = useState(false);
+  const [savingPat, setSavingPat] = useState(false);
+  const [removingPat, setRemovingPat] = useState(false);
+
+  useEffect(() => {
+    fetchPatStatus().then(setPatStatus).catch(() => setPatStatus({ configured: false, masked: null }));
+  }, []);
+
   const isConfigured = status?.configured ?? false;
 
-  const handleAddKey = () => {
-    if (keys.length < 5) setKeys([...keys, ""]);
-  };
-
-  const handleRemoveKey = (index: number) => {
-    setKeys(keys.filter((_, i) => i !== index));
-  };
-
+  const handleAddKey = () => { if (keys.length < 5) setKeys([...keys, ""]); };
+  const handleRemoveKey = (index: number) => { setKeys(keys.filter((_, i) => i !== index)); };
   const handleKeyChange = (index: number, value: string) => {
-    const updated = [...keys];
-    updated[index] = value;
-    setKeys(updated);
+    const updated = [...keys]; updated[index] = value; setKeys(updated);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -72,19 +104,43 @@ export default function KeysPage() {
     );
   };
 
+  const handleSavePat = async () => {
+    const trimmed = patInput.trim();
+    if (!trimmed) {
+      toast({ title: "Empty token", description: "Paste your GitHub PAT first.", variant: "destructive" });
+      return;
+    }
+    setSavingPat(true);
+    const result = await savePat(trimmed);
+    setSavingPat(false);
+    if (result.ok) {
+      setPatInput("");
+      setPatStatus({ configured: true, masked: result.masked ?? null });
+      toast({ title: "GitHub PAT saved", description: "You can now sync projects to GitHub." });
+    } else {
+      toast({ title: "Error", description: result.error ?? "Failed to save PAT", variant: "destructive" });
+    }
+  };
+
+  const handleRemovePat = async () => {
+    setRemovingPat(true);
+    await deletePat();
+    setRemovingPat(false);
+    setPatStatus({ configured: false, masked: null });
+    toast({ title: "GitHub PAT removed" });
+  };
+
   return (
     <AppLayout>
       <div className="p-8 max-w-2xl mx-auto w-full h-full overflow-y-auto space-y-8">
         <div>
           <h1 className="text-3xl font-bold tracking-tight mb-2">API Keys</h1>
           <p className="text-muted-foreground">
-            Add your Groq API keys to power the agent pipeline. Get free keys at{" "}
-            <a href="https://console.groq.com/keys" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
-              console.groq.com/keys
-            </a>.
+            Configure your API keys for Groq and GitHub integration.
           </p>
         </div>
 
+        {/* ── Groq Keys ──────────────────────────────────────────────────────── */}
         <Card className="glass-panel border-border/50">
           <CardHeader>
             <div className="flex items-start justify-between gap-4">
@@ -95,6 +151,10 @@ export default function KeysPage() {
                 </CardTitle>
                 <CardDescription className="mt-1.5">
                   Add up to 5 keys for parallel multi-agent execution. Keys rotate round-robin to bypass rate limits.
+                  Get free keys at{" "}
+                  <a href="https://console.groq.com/keys" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
+                    console.groq.com/keys
+                  </a>.
                 </CardDescription>
               </div>
               {!isLoading && (
@@ -135,9 +195,7 @@ export default function KeysPage() {
                 {isConfigured && status?.maskedKeys && status.maskedKeys.length > 0 && (
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
-                      <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">
-                        Active keys (masked)
-                      </p>
+                      <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Active keys (masked)</p>
                       <button
                         type="button"
                         onClick={() => setShowExisting(!showExisting)}
@@ -161,9 +219,7 @@ export default function KeysPage() {
                 )}
 
                 <div className="space-y-2">
-                  <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">
-                    Add keys
-                  </p>
+                  <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Add keys</p>
                   <form id="keys-form" onSubmit={handleSubmit} className="space-y-3">
                     {keys.map((key, index) => (
                       <div key={index} className="flex gap-2 items-center">
@@ -179,10 +235,7 @@ export default function KeysPage() {
                           />
                         </div>
                         {keys.length > 1 && (
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
+                          <Button type="button" variant="ghost" size="icon"
                             onClick={() => handleRemoveKey(index)}
                             className="text-muted-foreground hover:text-destructive shrink-0"
                           >
@@ -192,11 +245,7 @@ export default function KeysPage() {
                       </div>
                     ))}
                     {keys.length < 5 && (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={handleAddKey}
+                      <Button type="button" variant="outline" size="sm" onClick={handleAddKey}
                         className="w-full border-dashed text-muted-foreground hover:text-foreground"
                       >
                         <Plus className="w-4 h-4 mr-2" /> Add Another Key ({keys.length}/5)
@@ -204,7 +253,7 @@ export default function KeysPage() {
                     )}
                   </form>
                   <p className="text-xs text-muted-foreground">
-                    New keys are added to existing ones (max 5 total). To remove a key, delete all keys and re-add the ones you want to keep.
+                    New keys are merged with existing ones (max 5 total).
                   </p>
                 </div>
               </div>
@@ -213,21 +262,109 @@ export default function KeysPage() {
 
           {!isLoading && (
             <CardFooter className="border-t border-border/10 pt-6">
-              <Button
-                type="submit"
-                form="keys-form"
-                className="gap-2"
-                disabled={setApiKeys.isPending}
-              >
-                {setApiKeys.isPending ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Save className="w-4 h-4" />
-                )}
+              <Button type="submit" form="keys-form" className="gap-2" disabled={setApiKeys.isPending}>
+                {setApiKeys.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                 Save Keys
               </Button>
             </CardFooter>
           )}
+        </Card>
+
+        {/* ── GitHub PAT ─────────────────────────────────────────────────────── */}
+        <Card className="glass-panel border-border/50">
+          <CardHeader>
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <Github className="w-5 h-5 text-primary" />
+                  GitHub Personal Access Token
+                </CardTitle>
+                <CardDescription className="mt-1.5">
+                  Required to push generated projects to GitHub. Create a classic PAT with{" "}
+                  <code className="text-xs bg-muted px-1 py-0.5 rounded">repo</code> scope at{" "}
+                  <a
+                    href="https://github.com/settings/tokens/new?scopes=repo&description=Woxsom+Code"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-primary hover:underline"
+                  >
+                    github.com/settings/tokens
+                  </a>.
+                </CardDescription>
+              </div>
+              {patStatus && (
+                <Badge
+                  className={`shrink-0 gap-1.5 ${
+                    patStatus.configured
+                      ? "bg-green-500/15 text-green-400 border-green-500/30 hover:bg-green-500/20"
+                      : "bg-destructive/15 text-destructive border-destructive/30"
+                  }`}
+                >
+                  {patStatus.configured ? (
+                    <><CheckCircle2 className="w-3 h-3" /> Connected</>
+                  ) : (
+                    <><XCircle className="w-3 h-3" /> Not set</>
+                  )}
+                </Badge>
+              )}
+            </div>
+          </CardHeader>
+
+          <CardContent className="space-y-4">
+            {patStatus?.configured && patStatus.masked && (
+              <div className="flex items-center gap-3 rounded-lg border border-green-500/20 bg-green-500/5 px-4 py-3">
+                <CheckCircle2 className="w-4 h-4 text-green-400 shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm text-green-400 font-medium">Token active</p>
+                  <code className="text-xs text-muted-foreground font-mono">{patStatus.masked}</code>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => void handleRemovePat()}
+                  disabled={removingPat}
+                  className="text-muted-foreground hover:text-destructive shrink-0"
+                >
+                  {removingPat ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                </Button>
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">
+                {patStatus?.configured ? "Replace token" : "Add token"}
+              </p>
+              <div className="relative">
+                <Github className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <Input
+                  type={showPat ? "text" : "password"}
+                  placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
+                  className="pl-9 pr-10 bg-background/50 font-mono text-sm focus-visible:ring-primary/50"
+                  value={patInput}
+                  onChange={(e) => setPatInput(e.target.value)}
+                  autoComplete="off"
+                  onKeyDown={(e) => { if (e.key === "Enter" && patInput.trim()) void handleSavePat(); }}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPat(!showPat)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  {showPat ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                The token is stored securely in the database and never exposed in responses.
+              </p>
+            </div>
+          </CardContent>
+
+          <CardFooter className="border-t border-border/10 pt-6">
+            <Button onClick={() => void handleSavePat()} disabled={savingPat || !patInput.trim()} className="gap-2">
+              {savingPat ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+              Save Token
+            </Button>
+          </CardFooter>
         </Card>
       </div>
     </AppLayout>

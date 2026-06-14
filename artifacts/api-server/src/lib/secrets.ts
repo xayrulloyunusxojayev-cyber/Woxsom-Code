@@ -31,6 +31,31 @@ db.exec(`
 logger.info({ dbPath: DB_PATH }, "EncryptedSecrets SQLite store initialized (plain-text mode)");
 
 export const secretsDb = {
+  /** GitHub Personal Access Token ─────────────────────────────────────────── */
+  saveGitHubPat(pat: string): void {
+    db.prepare(`
+      INSERT INTO EncryptedSecrets (key_name, encrypted_value, updated_at)
+      VALUES ('github_pat', ?, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+      ON CONFLICT(key_name) DO UPDATE
+        SET encrypted_value = excluded.encrypted_value,
+            updated_at      = excluded.updated_at
+    `).run(pat);
+    logger.info("GitHub PAT saved to SQLite");
+  },
+
+  getGitHubPat(): string | null {
+    const row = db
+      .prepare("SELECT encrypted_value FROM EncryptedSecrets WHERE key_name = 'github_pat'")
+      .get() as SecretRow | undefined;
+    return row?.encrypted_value ?? null;
+  },
+
+  deleteGitHubPat(): void {
+    db.prepare("DELETE FROM EncryptedSecrets WHERE key_name = 'github_pat'").run();
+    logger.info("GitHub PAT deleted from EncryptedSecrets");
+  },
+
+  /** Groq API Keys ─────────────────────────────────────────────────────────── */
   saveKeys(keys: string[]): void {
     const value = JSON.stringify(keys);
     db.prepare(`
