@@ -22,5 +22,13 @@
     "hasProject": true,
     "createdAt": "2026-06-14T04:29:44.211Z",
     "updatedAt": "2026-06-14T04:30:24.004Z"
+  },
+  {
+    "id": "dbe28328-ccb0-4721-ad82-dfe7d1b062ec",
+    "title": "[Cmd] test",
+    "status": "error",
+    "hasProject": false,
+    "createdAt": "2026-06-14T09:07:53.621Z",
+    "updatedAt": "2026-06-14T09:07:59.817Z"
   }
 ]
