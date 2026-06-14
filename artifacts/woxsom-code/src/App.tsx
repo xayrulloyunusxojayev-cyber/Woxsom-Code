@@ -9,6 +9,7 @@ import ChatPage from "@/pages/chat";
 import ModelsPage from "@/pages/models";
 import SettingsPage from "@/pages/settings";
 import KeysPage from "@/pages/keys";
+import AdminPage from "@/pages/admin";
 
 const queryClient = new QueryClient();
 
@@ -21,6 +22,7 @@ function Router() {
       <Route path="/models" component={ModelsPage} />
       <Route path="/keys" component={KeysPage} />
       <Route path="/settings" component={SettingsPage} />
+      <Route path="/admin" component={AdminPage} />
       <Route component={NotFound} />
     </Switch>
   );

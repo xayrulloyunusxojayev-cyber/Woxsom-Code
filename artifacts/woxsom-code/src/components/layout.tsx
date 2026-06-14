@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
-import { LayoutDashboard, MessageSquare, Settings, Plus, Terminal, Trash2, Key } from "lucide-react";
+import { LayoutDashboard, MessageSquare, Settings, Plus, Terminal, Trash2, Key, Cpu } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 
 interface AppLayoutProps {
@@ -115,6 +115,15 @@ export function AppLayout({ children }: AppLayoutProps) {
             <div className={`flex items-center gap-2 px-2 py-2 text-sm rounded-md cursor-pointer transition-colors ${location === '/settings' ? 'bg-sidebar-accent text-sidebar-accent-foreground font-medium' : 'text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground'}`}>
               <Settings className="w-4 h-4" />
               Settings
+            </div>
+          </Link>
+
+          <Separator className="bg-sidebar-border my-1" />
+
+          <Link href="/admin" className="block">
+            <div className={`flex items-center gap-2 px-2 py-2 text-sm rounded-md cursor-pointer transition-colors ${location === '/admin' ? 'bg-primary/15 text-primary font-medium' : 'text-primary/60 hover:bg-primary/10 hover:text-primary'}`}>
+              <Cpu className="w-4 h-4" />
+              Engine Control Room
             </div>
           </Link>
         </div>

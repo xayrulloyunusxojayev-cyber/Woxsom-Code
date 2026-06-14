@@ -5,6 +5,7 @@ import sessionsRouter from "./sessions";
 import downloadRouter from "./download";
 import modelsRouter from "./models";
 import githubRouter from "./github";
+import adminRouter from "./admin";
 
 const router: IRouter = Router();
 
@@ -14,5 +15,6 @@ router.use(sessionsRouter);
 router.use(downloadRouter);
 router.use(modelsRouter);
 router.use(githubRouter);
+router.use(adminRouter);
 
 export default router;
