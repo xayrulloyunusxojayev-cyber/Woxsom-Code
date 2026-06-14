@@ -1,18 +1,20 @@
 import path from "path";
-import { mkdirSync, existsSync, readFileSync, writeFileSync } from "fs";
+import { existsSync, readFileSync, writeFileSync } from "fs";
 import { v4 as uuidv4 } from "uuid";
 import { logger } from "./logger";
+import { appendLog } from "./log-store";
+import { DATA_DIR } from "./data-dir";
 
-const workspaceRoot = process.cwd().endsWith(path.join("artifacts", "api-server"))
-  ? path.resolve(process.cwd(), "../..")
-  : process.cwd();
+const SESSIONS_FILE = path.join(DATA_DIR, "sessions.json");
+const MESSAGES_FILE = path.join(DATA_DIR, "messages.json");
+const PROJECT_FILES_FILE = path.join(DATA_DIR, "project_files.json");
 
-const dataDir = path.resolve(workspaceRoot, "artifacts/api-server/data");
-mkdirSync(dataDir, { recursive: true });
-
-const SESSIONS_FILE = path.join(dataDir, "sessions.json");
-const MESSAGES_FILE = path.join(dataDir, "messages.json");
-const PROJECT_FILES_FILE = path.join(dataDir, "project_files.json");
+const storageMode =
+  process.env["RENDER"] === "true"
+    ? "Render persistent disk (/var/data)"
+    : process.env["DATA_DIR"]
+      ? `custom DATA_DIR (${DATA_DIR})`
+      : "local dev storage";
 
 function readJson<T>(filePath: string, fallback: T): T {
   if (!existsSync(filePath)) return fallback;
@@ -65,7 +67,8 @@ function now(): string {
   return new Date().toISOString();
 }
 
-logger.info({ dataDir }, "JSON file store initialized");
+logger.info({ dataDir: DATA_DIR }, "JSON file store initialized");
+appendLog("info", `JSON file store initialised — ${storageMode}`, { dataDir: DATA_DIR });
 
 export const sessionDb = {
   list(): Session[] {

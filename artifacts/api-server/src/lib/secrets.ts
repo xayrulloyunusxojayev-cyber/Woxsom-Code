@@ -1,16 +1,10 @@
 import path from "node:path";
-import { mkdirSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { logger } from "./logger";
+import { appendLog } from "./log-store";
+import { DATA_DIR } from "./data-dir";
 
-const workspaceRoot = process.cwd().endsWith(path.join("artifacts", "api-server"))
-  ? path.resolve(process.cwd(), "../..")
-  : process.cwd();
-
-const dataDir = path.resolve(workspaceRoot, "artifacts/api-server/data");
-mkdirSync(dataDir, { recursive: true });
-
-const DB_PATH = path.join(dataDir, "secrets.db");
+const DB_PATH = path.join(DATA_DIR, "secrets.db");
 
 interface SecretRow {
   encrypted_value: string;
@@ -28,7 +22,15 @@ db.exec(`
   )
 `);
 
+const storageMode =
+  process.env["RENDER"] === "true"
+    ? "Render persistent disk (/var/data)"
+    : process.env["DATA_DIR"]
+      ? `custom DATA_DIR (${DATA_DIR})`
+      : "local dev storage";
+
 logger.info({ dbPath: DB_PATH }, "EncryptedSecrets SQLite store initialized (plain-text mode)");
+appendLog("info", `EncryptedSecrets DB initialised — ${storageMode}`, { dbPath: DB_PATH });
 
 export const secretsDb = {
   /** GitHub Personal Access Token ─────────────────────────────────────────── */
@@ -41,6 +43,7 @@ export const secretsDb = {
             updated_at      = excluded.updated_at
     `).run(pat);
     logger.info("GitHub PAT saved to SQLite");
+    appendLog("info", "GitHub PAT saved to persistent storage", { dbPath: DB_PATH });
   },
 
   getGitHubPat(): string | null {
@@ -53,6 +56,7 @@ export const secretsDb = {
   deleteGitHubPat(): void {
     db.prepare("DELETE FROM EncryptedSecrets WHERE key_name = 'github_pat'").run();
     logger.info("GitHub PAT deleted from EncryptedSecrets");
+    appendLog("info", "GitHub PAT deleted from persistent storage", { dbPath: DB_PATH });
   },
 
   /** Groq API Keys ─────────────────────────────────────────────────────────── */
@@ -66,6 +70,7 @@ export const secretsDb = {
             updated_at      = excluded.updated_at
     `).run(value);
     logger.info({ keyCount: keys.length }, "Groq API keys saved to SQLite");
+    appendLog("info", `Groq API keys saved — ${keys.length} key${keys.length !== 1 ? "s" : ""} written to persistent storage`, { dbPath: DB_PATH });
   },
 
   getKeys(): string[] {
@@ -79,6 +84,7 @@ export const secretsDb = {
       return parsed.filter((k): k is string => typeof k === "string" && k.trim().length > 0);
     } catch (err) {
       logger.error({ err }, "Failed to parse Groq API keys from SQLite");
+      appendLog("error", "Failed to parse Groq API keys from persistent storage", { dbPath: DB_PATH });
       return [];
     }
   },
@@ -86,5 +92,6 @@ export const secretsDb = {
   deleteKeys(): void {
     db.prepare("DELETE FROM EncryptedSecrets WHERE key_name = 'groq_api_keys'").run();
     logger.info("Groq API keys deleted from EncryptedSecrets");
+    appendLog("info", "Groq API keys deleted from persistent storage", { dbPath: DB_PATH });
   },
 };
